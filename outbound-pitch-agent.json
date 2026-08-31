@@ -1,0 +1,1865 @@
+{
+  "name": "Outbound Pitch Agent - Unified",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 15
+            }
+          ]
+        }
+      },
+      "id": "2f7310ca-0cc8-426e-9a0c-16670716ca0a",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1872,
+        -576
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8",
+          "mode": "list",
+          "cachedResultName": "Lead Gen",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Prospects",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "6bb563bb-3dd5-48d2-80d3-e18f45848f3f",
+      "name": "Read All Prospects",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1584,
+        -576
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PSyaYfUcRGpNqkm5",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8",
+          "mode": "list",
+          "cachedResultName": "Lead Gen",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 995457048,
+          "mode": "list",
+          "cachedResultName": "Discovery Config",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit#gid=995457048"
+        },
+        "options": {}
+      },
+      "id": "2c1dd831-7d45-4914-97ec-4c3e85a2f8d3",
+      "name": "Read Discovery Config",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1280,
+        -576
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PSyaYfUcRGpNqkm5",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-6",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {}
+      },
+      "id": "94c1928b-9aa7-4dbd-b204-b281d0382418",
+      "name": "Anthropic Chat Model (Discovery)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        -1088,
+        -384
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "7L0fo2zn1XoeG6Nu",
+          "name": "Anthropic account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"companies\": [\n    {\n      \"company_name\": \"Example Trucking LLC\",\n      \"website\": \"https://example.com\",\n      \"source_notes\": \"the notes text passed in for this search, copied exactly, or empty string if none was given\"\n    }\n  ]\n}",
+        "autoFix": true
+      },
+      "id": "fed8ef5c-21fb-489c-86fd-d39e34ea77d0",
+      "name": "Structured Output Parser (Discovery)",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        -752,
+        -384
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Industry: {{ $json.industry }}\nGeography: {{ $json.geography }}\nBatch size: {{ $json.batch_size }}\nAdditional notes: {{ $json.notes }}\n\nCompanies already found in previous searches (do not return these — find new ones):\n{{ $('Read All Prospects').all().map(item => item.json.company_name).filter(n => n).join(', ') }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are Brian's company discovery assistant for outbound prospecting. Brian runs a freelance AI automation agency and is looking for real companies to add to his prospecting list for a specific industry and geography.\n\nYou will be given:\n- An industry to target\n- A geography to target\n- A batch size (how many companies to find)\n- Additional notes/criteria to apply\n- A list of companies already found in previous searches\n\nBefore returning any output, you MUST call the web_search tool at least once. An empty companies list is only acceptable after you have made a genuine search attempt and found nothing — never as a first response with no search performed.\n\nYour job:\n1. Use the web_search tool to find REAL, verifiable companies matching the industry and geography given. Do not invent companies — every company you return must be one you actually found evidence of through search.\n2. Apply any additional notes/criteria given. Notes may describe company size or business type, but they may also describe qualifying signals for a real operational pain point (e.g. evidence of manual scheduling, slow quote turnaround, active hiring for back-office roles). When notes include this kind of qualifying criteria, do a lightweight check where the evidence is readily available (e.g. a job posting, a site's own description) — you don't need to exhaustively verify every signal at this stage, since deeper research happens later. Lean toward including a company you're reasonably confident is a real, relevant match rather than over-filtering and starving the list.\n3. Do NOT include any company that appears in the \"already found\" list, including near-duplicates of it (the same company under a slightly different name, spelling, or legal suffix like \"Inc\" / \"LLC\" / \"Ltd\"). Treat each run as a continuation of previous searches, not a fresh start: your job is to expand the list, not repeat it.\n4. For each company, capture its name and website (if you can find one; leave website empty if you can't).\n5. Return exactly the requested batch size if you can find that many genuinely NEW matches. If the industry/geography is running low on new candidates, return fewer rather than repeating a known company or inventing one — accuracy matters more than hitting the exact number.\n6. Avoid returning near-duplicate companies (e.g. the same company under slightly different spellings) within your own results.\n7. If the geography given is broad (a country, state/province, or region rather than a single city), aim for reasonable geographic spread across it rather than clustering every result in one city — unless the notes specify a narrower target.\n8. For each company you return, also copy the Additional notes text you were given into a source_notes field on that company object, exactly as given, word for word. If no notes were provided for this search, leave source_notes as an empty string.\n\nNever fabricate a company that you didn't find real evidence of through search, and never return a company that's already in the \"already found\" list."
+        }
+      },
+      "id": "0f01c86e-fbaf-43f0-ad25-1078acc27d19",
+      "name": "Discovery Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -960,
+        -576
+      ],
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "output.companies",
+        "options": {}
+      },
+      "id": "c5fdfde2-82dc-4274-96b9-341f27dd1e2c",
+      "name": "Split Out",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -576,
+        -576
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8",
+          "mode": "list",
+          "cachedResultName": "Lead Gen",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Prospects",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "company_name": "={{ $json.company_name }}",
+            "website": "={{ $json.website }}",
+            "source": "Discovery"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "company_name",
+              "displayName": "company_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "website",
+              "displayName": "website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contact_email",
+              "displayName": "contact_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subject_sent",
+              "displayName": "subject_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date_sent",
+              "displayName": "date_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "draft_subject",
+              "displayName": "draft_subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "draft_body",
+              "displayName": "draft_body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "suggested_contact_email",
+              "displayName": "suggested_contact_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "confidence",
+              "displayName": "confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email_format",
+              "displayName": "email_format",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "context_notes",
+              "displayName": "context_notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "e3521a66-6c8d-4858-83c4-4fe368b0842a",
+      "name": "Append to Prospects",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -48,
+        -288
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PSyaYfUcRGpNqkm5",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8",
+          "mode": "list",
+          "cachedResultName": "Lead Gen",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Prospects",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "7b11d79f-7f92-4e8e-b109-21cd4e616ad5",
+      "name": "Read Unprocessed Prospects",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1840,
+        96
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PSyaYfUcRGpNqkm5",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "a78ca770-79e1-4b53-910a-b986a620f2a6",
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1392,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-6",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {}
+      },
+      "id": "a07e74c9-af6b-4311-8199-c4aaf99890cc",
+      "name": "Anthropic Chat Model (Pitch)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        -1280,
+        320
+      ],
+      "notesInFlow": false,
+      "credentials": {
+        "anthropicApi": {
+          "id": "7L0fo2zn1XoeG6Nu",
+          "name": "Anthropic account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"subject\": \"Quick automation idea for {company}\",\n  \"body\": \"Full email body text here, ready to send as-is\",\n  \"contact_email\": \"person@company.com\",\n  \"confidence\": \"high\",\n  \"email_format\": \"owner_operated\"\n}",
+        "autoFix": true
+      },
+      "id": "3f7f5f1a-c4c7-4f0f-ba29-6469c18ae88a",
+      "name": "Structured Output Parser (Pitch)",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        -816,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Company: {{ $json.company_name }}\nWebsite: {{ $json.website }}\nContext notes from sourcing (if any): {{ $json.context_notes }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are Brian's outbound prospecting research and copywriting assistant. Brian runs a freelance AI automation agency, building AI agents and n8n workflows for businesses (CRM automation, lead handling, customer support agents, internal ops automation, etc.).\n\nFor each company you're given, do this:\n\n1. Use the web_search tool to research the company: what they do, their size/industry, and any pain points that AI automation could realistically solve. Look in BOTH categories below — don't limit yourself to internal operations.\n\nINTERNAL OPERATIONS signals:\n- Manual processes (data entry, re-entering info across systems, spreadsheet tracking)\n- Hiring for admin, dispatch, or back-office roles\n- The same role reposted repeatedly — a turnover or hard-to-staff signal, not just growth\n- Owner/founder visibly handling tasks that should be delegated\n- Disconnected tools with no integration between them\n- Paper-based or manual record keeping\n- Outdated internal systems or software\n\nCUSTOMER-FACING signals:\n- Broken, slow, or clunky booking/quote/contact forms\n- No online booking — phone or email only\n- Slow response time to customer inquiries specifically\n- Long wait times for quotes or estimates\n- No confirmation email or automated follow-up after an inquiry or booking\n- Outdated or non-mobile-friendly website\n- No FAQ/live chat, causing repetitive back-and-forth\n\nIdentify 2-3 genuine, specific pain points from what you found — each one must be independently evidenced, not inferred just to pad out the count. If you can only find strong evidence for one or two signals, use only those; never invent a third to hit the number. Quality and genuine evidence matter more than reaching a specific count.\n\nIf context notes from sourcing are provided above, treat them as a starting hypothesis for what kind of pain point to look for, but still verify independently with real research — the notes are a hint, not a substitute for evidence. If no context notes are given, proceed with your normal broad research across both categories with no additional guidance.\n\n2. Before writing anything, assess company structure using real evidence — never guess this. Search for: employee count (company site, LinkedIn company page), OR any named role that clearly isn't the owner (ops manager, dispatch manager, logistics manager, office manager, etc.).\n\nClassify as one of two states:\n- \"has_org_structure\": you found either 15+ employees, OR a real named non-owner operational role.\n- \"owner_operated\": neither was found — default here if evidence is genuinely absent. Do not assume structure exists just because a company seems established.\n\nIf you're not confident in the evidence, default to \"owner_operated\" — the direct pitch is the safer failure mode.\n\nAdditionally, if \"has_org_structure\", assess whether the organization shows real departmental complexity (multiple distinct functions or departments found, not just a headcount over the threshold) versus being simple (headcount alone, no clear departmental breadth). This determines the close in step 5.\n\n3. Finding the contact email is a required two-step process, not a soft preference:\n   a. If \"has_org_structure\": specifically search for the owner, founder, or CEO by name — this email must go to them specifically, not a general staff member.\n   b. If \"owner_operated\": actively search for a named person first — search terms like \"[company name] founder\" or \"[company name] owner\" or \"[company name] manager team\". If you find a Team, About, or Leadership page, use the read_full_page tool on it specifically to look for a real name tied to a real email address. Only if you've made a genuine attempt and found no named person, fall back to a published generic inbox (info@, contact@) if one exists.\n\n   The contact_email field must contain NOTHING except a single valid email address with no extra words, labels, or punctuation attached — or an empty string if none was found. Never include explanatory text in this field.\n\n4. Describe the diagnostic process using this fixed template, adapting only the company name — this is the same description every time, so consistency here is intentional, unlike the pain points (which must be genuinely researched per company) or the subject line (which must never repeat):\n\n\"A focused diagnosis of [Company]'s operations would look at these and other areas that might be costing real time and money, then produce a ranked list of what's worth fixing first, each with a realistic cost attached. No build happens and nothing's committed to until we've talked it through and agreed together.\"\n\nUse this near-verbatim. Only the company name changes.\n\n5. Write the email in three paragraphs. This structure applies to BOTH \"has_org_structure\" and \"owner_operated\" — only the greeting and the close differ between them.\n\nParagraph 1: Present the 2-3 pain points from step 1 as real, specific observations about the company — never a generic list, each one grounded in what you actually found.\n\nParagraph 2: The diagnostic description from step 4, adapted only with the company name.\n\nParagraph 3 (the close):\n- If \"has_org_structure\" AND the org shows real departmental complexity: ask who's the right person to loop in, and explicitly offer that they could take the conversation themselves instead. Include: \"Grab a time that works here: https://calendar.app.google/HufTWeGK64HfkGxA7\"\n- If \"has_org_structure\" AND the org is simple, OR if \"owner_operated\": ask directly for a call. Include: \"Grab a time that works here: https://calendar.app.google/HufTWeGK64HfkGxA7\"\n\nGreeting: address the owner/CEO by name if found (\"has_org_structure\"), or the best named contact found (\"owner_operated\"). If only a generic inbox was found, skip the named greeting and open directly with paragraph 1 instead.\n\nWord count: up to 150 words, either format.\n\nNever reveal how the diagnosis or any automation gets built, or reference having done this for another company or client before — the mechanism and any proof-of-work stay out entirely.\n\nWriting style — avoid these AI tells:\n- Never use em-dashes (—). Use a period, comma, or a new sentence instead.\n- Never write a rule-of-three list where three parallel phrases are strung together for rhythm.\n- Never close with a \"no more X or Y\" contrastive pattern.\n- Avoid overly polished, symmetrical sentence structure. Uneven sentence lengths read as human.\n- Prefer plain words over copywriting words: \"big\" over \"significant,\" \"fix\" over \"solution,\" \"helps\" over \"streamlines.\"\n\n6. Subject line guidance: Build the subject line around the NUMBER of pain points you found (2 or 3, from step 1) — name the count without revealing which ones. This creates honest curiosity because the body immediately reveals all of them; it's not a withhold, just a natural lead-in to what follows.\n\nExamples of the pattern (invent your own each time, do not reuse these verbatim):\n- \"Found three things worth mentioning.\"\n- \"Two things stood out, for what it's worth.\"\n- \"Noticed a few things. Wanted to flag them.\"\n\nKeep it understated, not performative — this is a quieter, more matter-of-fact kind of curiosity than shock value. Always use proper capitalization and correct grammar.\n\nNever fake urgency, a prior conversation, or a relationship that doesn't exist. Never use special characters, emoji, or ALL CAPS.\n\n7. Rate contact_email confidence using one of four levels:\n   - \"high\": a named person's email, directly found stated somewhere — not guessed.\n   - \"verified\": a real email address you found directly published on the company's own materials, even if it's a generic inbox — not a guess.\n   - \"inferred\": a plausible but unconfirmed guess at an email pattern that you did not find directly published anywhere.\n   - \"none\": nothing credible found.\n\nNever fabricate research findings, company structure evidence, or claims about the company. If you can't find enough to write something genuinely specific, reflect that honestly in the confidence field rather than writing something generic."
+        }
+      },
+      "id": "de7ea1b6-77c6-4906-9a50-cf218c0f08bb",
+      "name": "Research & Pitch Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -1136,
+        96
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "confidence-check-1",
+              "leftValue": "={{ $json.output.confidence }}",
+              "rightValue": "high",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "confidence-check-2",
+              "leftValue": "={{ $json.output.confidence }}",
+              "rightValue": "verified",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "6db0f752-844f-4708-beef-2117f8c8de2c",
+      "name": "Confidence Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -816,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.output.contact_email }}",
+        "subject": "={{ $json.output.subject }}",
+        "message": "={{ (() => {\n  const raw = $json.output.body;\n  const paragraphs = raw\n    .split(/\\n\\s*\\n/)\n    .map(p => p.trim())\n    .filter(p => p.length > 0)\n    .map(p => `<p style=\"margin:0 0 14px 0;\">${p.replace(/\\n/g, '<br>')}</p>`)\n    .join('');\n  return `<div style=\"font-family:Arial, sans-serif; font-size:14px; line-height:1.6; color:#222222;\">${paragraphs}<p style=\"margin:20px 0 0 0;\">Brian</p></div>`;\n})() }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "6377c196-3089-4fd1-9df6-ca7df012cde2",
+      "name": "Send Pitch Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -288,
+        80
+      ],
+      "webhookId": "fc597fff-b1cd-4b81-979a-10bee0c5fa07",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "C2SL161M8XEhFMe7",
+          "name": "Gmail account 3"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8",
+          "mode": "list",
+          "cachedResultName": "Lead Gen",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Prospects",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "company_name": "={{ $('Loop Over Items').item.json.company_name }}",
+            "status": "Sent",
+            "contact_email": "={{ $('Research & Pitch Agent').item.json.output.contact_email }}",
+            "subject_sent": "={{ $('Research & Pitch Agent').item.json.output.subject }}",
+            "date_sent": "={{ $('Schedule Trigger').item.json['Readable date'] }}",
+            "row_number": 0,
+            "confidence": "={{ $('Research & Pitch Agent').item.json.output.confidence }}",
+            "website": "={{ $('Loop Over Items').item.json.website }}",
+            "source": "={{ $('Loop Over Items').item.json.source }}",
+            "draft_subject": "={{ $('Email Format Check').item.json.output.subject }}",
+            "draft_body": "={{ $('Email Format Check').item.json.output.body }}",
+            "suggested_contact_email": "={{ $('Email Format Check').item.json.output.contact_email }}",
+            "email_format": "={{ $('Research & Pitch Agent').item.json.output.email_format }}"
+          },
+          "matchingColumns": [
+            "company_name"
+          ],
+          "schema": [
+            {
+              "id": "company_name",
+              "displayName": "company_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "website",
+              "displayName": "website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contact_email",
+              "displayName": "contact_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subject_sent",
+              "displayName": "subject_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date_sent",
+              "displayName": "date_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "draft_subject",
+              "displayName": "draft_subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "draft_body",
+              "displayName": "draft_body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "suggested_contact_email",
+              "displayName": "suggested_contact_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "confidence",
+              "displayName": "confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email_format",
+              "displayName": "email_format",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "8858a36a-e8e3-45ae-a5b3-3e5420dbaeb7",
+      "name": "Mark as Sent",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        160,
+        144
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PSyaYfUcRGpNqkm5",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8",
+          "mode": "list",
+          "cachedResultName": "Lead Gen",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Prospects",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "company_name": "={{ $('Loop Over Items').item.json.company_name }}",
+            "status": "Needs manual review",
+            "suggested_contact_email": "={{ $('Research & Pitch Agent').item.json.output.contact_email }}",
+            "draft_body": "={{ $('Research & Pitch Agent').item.json.output.body }}",
+            "confidence": "={{ $('Research & Pitch Agent').item.json.output.confidence }}",
+            "subject_sent": "={{ $('Research & Pitch Agent').item.json.output.subject }}",
+            "website": "={{ $('Loop Over Items').item.json.website }}",
+            "source": "={{ $('Loop Over Items').item.json.source }}"
+          },
+          "matchingColumns": [
+            "company_name"
+          ],
+          "schema": [
+            {
+              "id": "company_name",
+              "displayName": "company_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "website",
+              "displayName": "website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contact_email",
+              "displayName": "contact_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "subject_sent",
+              "displayName": "subject_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "date_sent",
+              "displayName": "date_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "draft_subject",
+              "displayName": "draft_subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "draft_body",
+              "displayName": "draft_body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "suggested_contact_email",
+              "displayName": "suggested_contact_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "confidence",
+              "displayName": "confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email_format",
+              "displayName": "email_format",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "df6c7b0b-bd1f-4a1a-aed7-376dfb1d4f1f",
+      "name": "Mark for Review",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -544,
+        432
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PSyaYfUcRGpNqkm5",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8",
+          "mode": "list",
+          "cachedResultName": "Lead Gen",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Prospects",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "7ab534a9-9b63-46c9-bfda-449de720398b",
+      "name": "Read Prospects for Summary",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1088,
+        -64
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PSyaYfUcRGpNqkm5",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Node: Build Daily Summary\n// Builds one row per company processed today, marks it Sent or Not Sent,\n// and gives a plain-English reason when it wasn't sent. Renders as a\n// color-coded HTML table so you can scan it at a glance.\n\nconst queuedToday = $('Filter').all().map(item => item.json.company_name);\nconst currentRows = $input.all().map(item => item.json);\n\nconst reasonMap = {\n  'inferred': 'Contact email unconfirmed — a guessed pattern, not a verified address',\n  'none': 'No credible contact information found',\n  'format_invalid': 'Contact email address was malformed — needs manual correction',\n  'send_error': 'Email failed to send (Gmail error) — check the address and try manually'\n};\n\nlet rows = [];\nlet sentCount = 0;\nlet notSentCount = 0;\n\nfor (const name of queuedToday) {\n  const row = currentRows.find(r => (r.company_name || '').trim().toLowerCase() === (name || '').trim().toLowerCase());\n\n  if (!row) {\n    rows.push({ company: name, sent: false, reason: 'Not found in sheet \\u2014 check manually' });\n    notSentCount++;\n    continue;\n  }\n\n  if (row.status === 'Sent') {\n    rows.push({ company: name, sent: true, reason: '' });\n    sentCount++;\n  } else if (row.status === 'Needs manual review') {\n    const reason = reasonMap[row.confidence] || `Held for review (confidence: ${row.confidence || 'unknown'})`;\n    rows.push({ company: name, sent: false, reason: reason });\n    notSentCount++;\n  } else {\n    rows.push({ company: name, sent: false, reason: 'Processing did not complete \\u2014 check the workflow execution log' });\n    notSentCount++;\n  }\n}\n\nconst today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });\n\nconst tableRows = rows.map(r => {\n  const bg = r.sent ? '#d9f2d9' : '#fbdcdc';\n  const statusText = r.sent ? 'Sent' : 'Not Sent';\n  const statusColor = r.sent ? '#1a7a1a' : '#b30000';\n  return `<tr style=\"background-color:${bg};\">\n    <td style=\"padding:8px 12px; border:1px solid #ccc;\">${r.company}</td>\n    <td style=\"padding:8px 12px; border:1px solid #ccc; color:${statusColor}; font-weight:bold;\">${statusText}</td>\n    <td style=\"padding:8px 12px; border:1px solid #ccc;\">${r.reason}</td>\n  </tr>`;\n}).join('');\n\nconst html = `\n<div style=\"font-family:Arial, sans-serif; font-size:14px; color:#222;\">\n  <h2 style=\"margin-bottom:4px;\">Daily Outbound Pitch Agent Summary \\u2014 ${today}</h2>\n  <p style=\"margin-top:0;\">Total processed: ${queuedToday.length} &nbsp;|&nbsp; Sent: ${sentCount} &nbsp;|&nbsp; Not sent: ${notSentCount}</p>\n  <table style=\"border-collapse:collapse; width:100%; margin-top:12px;\">\n    <tr style=\"background-color:#333; color:#fff;\">\n      <th style=\"padding:8px 12px; text-align:left;\">Company</th>\n      <th style=\"padding:8px 12px; text-align:left;\">Status</th>\n      <th style=\"padding:8px 12px; text-align:left;\">Reason (if not sent)</th>\n    </tr>\n    ${tableRows}\n  </table>\n</div>`;\n\nreturn [{\n  json: {\n    summary_subject: `Pitch Agent Summary \\u2014 ${sentCount} sent, ${notSentCount} not sent (${today})`,\n    summary_body: html\n  }\n}];"
+      },
+      "id": "d33cc7e0-356a-450a-806f-65800dc5fc68",
+      "name": "Build Daily Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "brian.kaguru01@gmail.com",
+        "subject": "={{ $json.summary_subject }}",
+        "message": "={{ $json.summary_body }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "cf2c3785-3d8d-4045-ba9a-bd1aac1d4683",
+      "name": "Send Daily Summary Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -368,
+        -64
+      ],
+      "webhookId": "6651df2b-de6d-4530-8f04-13a2159f4d90",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "C2SL161M8XEhFMe7",
+          "name": "Gmail account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Search the web to find real, verifiable companies matching a given industry and geography. Use this tool for every search — you must call this tool at least once before returning any results. Input: a specific search query string (e.g. \"civil engineering firms Nairobi Kenya\").",
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"api_key\": \"{{ $env.TAVILY_API_KEY }}\",\n  \"query\": \"{query}\",\n  \"search_depth\": \"advanced\",\n  \"max_results\": 8\n}",
+        "placeholderDefinitions": {
+          "values": [
+            {
+              "name": "query",
+              "description": "The search query to run to find candidate companies, e.g. 'small fleet trucking companies Texas'",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "9b566fcf-0457-4f0d-8d31-d7029ddb5253",
+      "name": "web_search_discovery",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        -912,
+        -384
+      ]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Search the web for information about a company, its business, and its contact details. Input: a search query string.",
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"api_key\": \"{{ $env.TAVILY_API_KEY }}\",\n  \"query\": \"{query}\",\n  \"search_depth\": \"advanced\",\n  \"max_results\": 5\n}",
+        "placeholderDefinitions": {
+          "values": [
+            {
+              "name": "query",
+              "description": "The search query to run, e.g. company name plus 'contact email' or 'company overview'",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "077aee13-bb19-44d2-9181-7de098ff4d35",
+      "name": "web_search_pitch",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        -1120,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Fetch and read the full text content of one specific web page URL. Use this after web_search finds a promising company page (contact, about, team) but the snippet doesn't clearly show the actual email — this reads the whole page rather than a short summary.",
+        "method": "POST",
+        "url": "https://api.tavily.com/extract",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"api_key\": \"{{ $env.TAVILY_API_KEY }}\",\n  \"urls\": [\"{url}\"],\n  \"extract_depth\": \"advanced\"\n}",
+        "placeholderDefinitions": {
+          "values": [
+            {
+              "name": "url",
+              "description": "The exact URL of a specific page to read in full, e.g. a company's Contact, About, or Team page found via web_search",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "8bfcf90c-ee79-4754-975e-9144bcb32dfa",
+      "name": "read_full_page_pitch",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        -976,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "67b47c39-283f-4213-8d66-efb124ac5ce0",
+              "leftValue": "={{ $json.output.contact_email }}",
+              "rightValue": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -592,
+        96
+      ],
+      "id": "f979c843-2043-4559-ba8a-a9da21706c31",
+      "name": "Email Format Check"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8",
+          "mode": "list",
+          "cachedResultName": "Lead Gen",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Prospects",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "company_name": "={{ $('Loop Over Items').item.json.company_name }}",
+            "status": "Needs manual review",
+            "suggested_contact_email": "={{ $('Research & Pitch Agent').item.json.output?.contact_email }}",
+            "draft_subject": "={{ $('Research & Pitch Agent').item.json.output?.subject }}",
+            "draft_body": "={{ $('Research & Pitch Agent').item.json.output?.body }}",
+            "row_number": 0,
+            "confidence": "format_invalid"
+          },
+          "matchingColumns": [
+            "company_name"
+          ],
+          "schema": [
+            {
+              "id": "company_name",
+              "displayName": "company_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "website",
+              "displayName": "website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contact_email",
+              "displayName": "contact_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "subject_sent",
+              "displayName": "subject_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "date_sent",
+              "displayName": "date_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "draft_subject",
+              "displayName": "draft_subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "draft_body",
+              "displayName": "draft_body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "suggested_contact_email",
+              "displayName": "suggested_contact_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "confidence",
+              "displayName": "confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "3b9a16f2-9c4c-4ac9-b7d1-300576572cbe",
+      "name": "Mark - Invalid Email Format",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -192,
+        432
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PSyaYfUcRGpNqkm5",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8",
+          "mode": "list",
+          "cachedResultName": "Lead Gen",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Prospects",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KGNY-Ob6Sq5sfrspCfg2RBJwpw-J5bO8JMAsqxMGUx8/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "company_name": "={{ $('Read Unprocessed Prospects').item.json.company_name }}",
+            "status": "Needs manual review",
+            "suggested_contact_email": "={{ $('Research & Pitch Agent').item.json.output?.contact_email }}",
+            "draft_subject": "={{ $('Research & Pitch Agent').item.json.output.subject }}",
+            "draft_body": "={{ $('Research & Pitch Agent').item.json.output?.body }}",
+            "row_number": 0,
+            "confidence": "send_error"
+          },
+          "matchingColumns": [
+            "company_name"
+          ],
+          "schema": [
+            {
+              "id": "company_name",
+              "displayName": "company_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "website",
+              "displayName": "website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contact_email",
+              "displayName": "contact_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "subject_sent",
+              "displayName": "subject_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "date_sent",
+              "displayName": "date_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "draft_subject",
+              "displayName": "draft_subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "draft_body",
+              "displayName": "draft_body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "suggested_contact_email",
+              "displayName": "suggested_contact_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "confidence",
+              "displayName": "confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "16539d8e-b971-41e0-9321-6f850ab48beb",
+      "name": "Mark - Send Failed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        128,
+        432
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PSyaYfUcRGpNqkm5",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6c380eff-692e-4c88-b309-437d1baac43b",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        -1616,
+        96
+      ],
+      "id": "6d783ed6-e84e-43d7-a777-e54f263e1c4e",
+      "name": "Filter"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-6",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        -752,
+        -240
+      ],
+      "id": "d401b58b-8e64-4efd-aca6-e73e89a4126f",
+      "name": "Anthropic Chat Model",
+      "credentials": {
+        "anthropicApi": {
+          "id": "7L0fo2zn1XoeG6Nu",
+          "name": "Anthropic account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-6",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        -816,
+        448
+      ],
+      "id": "ab79cf5c-1918-46ee-8b84-588c9d4083b9",
+      "name": "Anthropic Chat Model1",
+      "credentials": {
+        "anthropicApi": {
+          "id": "7L0fo2zn1XoeG6Nu",
+          "name": "Anthropic account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Node: Filter Out Duplicates\n// Removes any company already in the sheet, AND removes any company\n// that appears more than once within this same newly-found batch\n// (keeping only the first occurrence).\n\nconst existingNames = new Set(\n  $('Read All Prospects').all().map(item => (item.json.company_name || '').toLowerCase().trim())\n);\n\nconst seenThisBatch = new Set();\nconst output = [];\n\nfor (const item of $input.all()) {\n  const name = (item.json.company_name || '').toLowerCase().trim();\n  if (!name) continue;                    // drops malformed/blank rows\n  if (existingNames.has(name)) continue;   // already on the sheet\n  if (seenThisBatch.has(name)) continue;   // duplicate within today's batch\n  seenThisBatch.add(name);\n  output.push(item);\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -336,
+        -576
+      ],
+      "id": "8d3b453b-76b9-4a91-915e-27985415ae57",
+      "name": "Filter Out Duplicates",
+      "alwaysOutputData": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read All Prospects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read All Prospects": {
+      "main": [
+        [
+          {
+            "node": "Read Discovery Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Discovery Config": {
+      "main": [
+        [
+          {
+            "node": "Discovery Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model (Discovery)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Discovery Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser (Discovery)": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Discovery Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discovery Agent": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Filter Out Duplicates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append to Prospects": {
+      "main": [
+        [
+          {
+            "node": "Read Unprocessed Prospects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Unprocessed Prospects": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Read Prospects for Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Research & Pitch Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model (Pitch)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Research & Pitch Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser (Pitch)": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Research & Pitch Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research & Pitch Agent": {
+      "main": [
+        [
+          {
+            "node": "Confidence Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confidence Check": {
+      "main": [
+        [
+          {
+            "node": "Email Format Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark for Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Pitch Email": {
+      "main": [
+        [
+          {
+            "node": "Mark as Sent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark - Send Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Sent": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark for Review": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Prospects for Summary": {
+      "main": [
+        [
+          {
+            "node": "Build Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Summary Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "web_search_discovery": {
+      "ai_tool": [
+        [
+          {
+            "node": "Discovery Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "web_search_pitch": {
+      "ai_tool": [
+        [
+          {
+            "node": "Research & Pitch Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "read_full_page_pitch": {
+      "ai_tool": [
+        [
+          {
+            "node": "Research & Pitch Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Format Check": {
+      "main": [
+        [
+          {
+            "node": "Send Pitch Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark - Invalid Email Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark - Invalid Email Format": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark - Send Failed": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Structured Output Parser (Discovery)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Structured Output Parser (Pitch)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Out Duplicates": {
+      "main": [
+        [
+          {
+            "node": "Append to Prospects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "dynamic",
+    "timezone": "Africa/Nairobi",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "798b59fe-69d3-4636-96ef-3169f93a65a3",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "eff262def81228b049aa471ebced5d6d3128aadf48a6d4fc89e0b090fc88c1c7"
+  },
+  "nodeGroups": [],
+  "id": "kGKXomgsrpUmNVq0",
+  "tags": []
+}
