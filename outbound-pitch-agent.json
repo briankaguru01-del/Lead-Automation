@@ -483,6 +483,7 @@
       "parameters": {
         "sendTo": "={{ $json.output.contact_email }}",
         "subject": "={{ $json.output.subject }}",
+        "emailType": "html",
         "message": "={{ (() => {\n  const raw = $json.output.body;\n  const paragraphs = raw\n    .split(/\\n\\s*\\n/)\n    .map(p => p.trim())\n    .filter(p => p.length > 0)\n    .map(p => `<p style=\"margin:0 0 14px 0;\">${p.replace(/\\n/g, '<br>')}</p>`)\n    .join('');\n  const signature = `<p style=\"margin:20px 0 4px 0;\">Brian</p><div style=\"margin-top:16px; padding-top:12px; border-top:1px solid #dddddd; font-size:13px; color:#555555;\"><strong>Brian Kaguru</strong><br>Founder, Wilvo AI<br><a href=\"mailto:diagnostics@wilvoai.net\" style=\"color:#555555; text-decoration:none;\">diagnostics@wilvoai.net</a>&nbsp;&middot;&nbsp;<a href=\"https://wilvoai.net\" style=\"color:#555555; text-decoration:none;\">wilvoai.net</a><br><a href=\"https://wilvoai.net\" style=\"color:#555555; text-decoration:none;\">Find Where AI Can Help \\u2192</a></div>`;\n  return `<div style=\"font-family:Arial, sans-serif; font-size:14px; line-height:1.6; color:#222222;\">${paragraphs}${signature}</div>`;\n})() }}",
         "options": {
           "appendAttribution": false
@@ -923,6 +924,7 @@
       "parameters": {
         "sendTo": "brian.kaguru01@gmail.com",
         "subject": "={{ $json.summary_subject }}",
+        "emailType": "html",
         "message": "={{ $json.summary_body }}",
         "options": {
           "appendAttribution": false
