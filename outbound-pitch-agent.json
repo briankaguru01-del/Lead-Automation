@@ -185,7 +185,8 @@
           "value": {
             "company_name": "={{ $json.company_name }}",
             "website": "={{ $json.website }}",
-            "source": "Discovery"
+            "source": "Discovery",
+            "context_notes": "={{ $json.source_notes }}"
           },
           "matchingColumns": [],
           "schema": [
