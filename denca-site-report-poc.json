@@ -65,7 +65,7 @@
     },
     {
       "parameters": {
-        "jsonSchemaExample": "{\n  \"site_name\": \"\",\n  \"report_date\": \"\",\n  \"reported_by\": \"\",\n  \"supervisor\": \"\",\n  \"work_done\": \"\",\n  \"labour_summary\": \"\",\n  \"materials_needed\": \"\",\n  \"materials_on_site\": \"\",\n  \"expenditure\": \"\",\n  \"next_day_plan\": \"\",\n  \"visitors\": \"\",\n  \"challenges\": \"\",\n  \"other_notes\": \"\"\n}",
+        "jsonSchemaExample": "{\n  \"site_name\": \"\",\n  \"report_date\": \"\",\n  \"reported_by\": \"\",\n  \"work_done_today\": \"\",\n  \"labour\": \"\",\n  \"material_needed\": \"\",\n  \"tomorrows_plan\": \"\",\n  \"visit\": \"\",\n  \"challenges\": \"\",\n  \"notes\": \"\"\n}",
         "autoFix": true
       },
       "id": "3d7188f2-7683-4a3e-91fa-28106beed524",
@@ -83,7 +83,7 @@
         "text": "=Site: {{ $json['Site Name'] }}\nDate: {{ $json['Report Date'] }}\n\nReport text (site admin's own words, format varies):\n{{ $json['Report Text'] }}",
         "hasOutputParser": true,
         "options": {
-          "systemMessage": "You are a data extraction assistant for Denca Contractors Kenya Limited. Site admins send daily reports from construction sites, and every admin writes them differently \u2014 different section names, different order, some sections left blank or skipped entirely. Your job is to read whatever report text you're given and pull the information into the fixed set of fields you've been asked to return, regardless of how it's formatted or labeled in the original.\n\nRules:\n1. Only extract information that is actually present in the report. If a field isn't mentioned anywhere, return it as an empty string \u2014 never guess or invent a value.\n2. Match information by meaning, not exact wording. Headings like \"Labour\", \"Workers\", or \"Manpower\" all map to labour_summary; \"Material needed\", \"Materials required\", or \"Supplies needed\" all map to materials_needed.\n3. For labour_summary, capture the worker counts, categories (skilled/semi-skilled/unskilled/security etc.) and rates exactly as written, as a short summary \u2014 don't do any math or convert it to a single number.\n4. If the report mentions site visitors, inspections, or people who came to site, put that under visitors.\n5. Anything relevant that doesn't cleanly fit one of the other fields goes into other_notes rather than being dropped.\n6. Use the Site Name and Report Date given to you directly for site_name and report_date \u2014 don't try to re-extract those from the report text."
+          "systemMessage": "You are a data extraction assistant for Denca Contractors Kenya Limited. Site admins send daily reports from construction sites, and every admin writes them differently \u2014 different section names, different order, some sections left blank or skipped entirely. Your job is to read whatever report text you're given and pull the information into the fixed set of fields you've been asked to return, regardless of how it's formatted or labeled in the original.\n\nFields and what maps to them:\n- reported_by: who submitted the report (e.g. \"Reported by\", \"Report Submission\", or the Site Admin's name if no separate reporter is named).\n- work_done_today: what work was carried out (e.g. \"Work Done Today\", \"Work Done\", \"Progress\").\n- labour: worker counts, categories (skilled/semi-skilled/unskilled/security etc.) and rates, exactly as written \u2014 don't do any math or convert it to a single number.\n- material_needed: materials required or requested (e.g. \"Material needed\", \"Materials required\", \"Supplies needed\").\n- tomorrows_plan: the plan for the next working day, whatever day it's labeled with (e.g. \"Thursday plan\", \"Tomorrow's plan\", \"Next day plan\").\n- visit: anyone who visited or inspected the site (e.g. \"Visit\", \"Visitors\", inspections).\n- challenges: problems, issues, or blockers reported (e.g. \"Challenges\", \"Issues\", or \"None\" if explicitly stated).\n- notes: anything else in the report that doesn't fit one of the fields above (e.g. Supervisor name, other site details) \u2014 don't drop it, put it here instead.\n\nRules:\n1. Only extract information that is actually present in the report. If a field isn't mentioned anywhere, return it as an empty string \u2014 never guess or invent a value.\n2. Match information by meaning, not exact wording \u2014 section headings vary between admins, so look at what each section is actually describing, not just its label.\n3. Use the Site Name and Report Date given to you directly for site_name and report_date \u2014 don't try to re-extract those from the report text."
         }
       },
       "id": "b6c10e1b-2cc9-4eae-a9d7-3d0e8b4b3d4e",
@@ -116,16 +116,13 @@
             "site_name": "={{ $json.output.site_name }}",
             "report_date": "={{ $json.output.report_date }}",
             "reported_by": "={{ $json.output.reported_by }}",
-            "supervisor": "={{ $json.output.supervisor }}",
-            "work_done": "={{ $json.output.work_done }}",
-            "labour_summary": "={{ $json.output.labour_summary }}",
-            "materials_needed": "={{ $json.output.materials_needed }}",
-            "materials_on_site": "={{ $json.output.materials_on_site }}",
-            "expenditure": "={{ $json.output.expenditure }}",
-            "next_day_plan": "={{ $json.output.next_day_plan }}",
-            "visitors": "={{ $json.output.visitors }}",
+            "work_done_today": "={{ $json.output.work_done_today }}",
+            "labour": "={{ $json.output.labour }}",
+            "material_needed": "={{ $json.output.material_needed }}",
+            "tomorrows_plan": "={{ $json.output.tomorrows_plan }}",
+            "visit": "={{ $json.output.visit }}",
             "challenges": "={{ $json.output.challenges }}",
-            "other_notes": "={{ $json.output.other_notes }}",
+            "notes": "={{ $json.output.notes }}",
             "raw_report_text": "={{ $('Site Report Form').item.json['Report Text'] }}",
             "submitted_at": "={{ $now.toISO() }}"
           },
