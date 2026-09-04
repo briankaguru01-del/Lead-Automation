@@ -114,7 +114,7 @@
             "challenges": "={{ $json['Challenges'] }}",
             "notes": "={{ $json['Notes'] }}",
             "submitted_at": "={{ $now.toFormat('dd LLL yyyy, hh:mm a') }}",
-            "raw_submission": "={{ Object.entries($json).map(([field, value]) => field + ': ' + value).join('\\n') }}"
+            "raw_submission": "={{ 'Site Name: ' + $json['Site Name'] + '\\n' + 'Report Date: ' + $json['Report Date'] + '\\n' + 'Site Admin: ' + $json['Site Admin'] + '\\n' + 'Supervisor: ' + $json['Supervisor'] + '\\n' + 'Reported By: ' + $json['Reported By'] + '\\n' + 'Work Done Today: ' + $json['Work Done Today'] + '\\n' + 'Labour: ' + $json['Labour'] + '\\n' + 'Material Needed: ' + $json['Material Needed'] + '\\n' + 'Tomorrow\\'s Plan: ' + $json['Tomorrow\\'s Plan'] + '\\n' + 'Visit: ' + $json['Visit'] + '\\n' + 'Challenges: ' + $json['Challenges'] + '\\n' + 'Notes: ' + $json['Notes'] }}"
           },
           "matchingColumns": [],
           "schema": []
