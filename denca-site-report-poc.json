@@ -1,0 +1,199 @@
+{
+  "name": "Denca Site Report PoC",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Denca Daily Site Report",
+        "formDescription": "Paste your daily site report below, in whatever format you normally write it. Nothing needs to be reformatted first.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Site Name",
+              "fieldType": "text",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Report Date",
+              "fieldType": "date",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Report Text",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "buttonLabel": "Submit Report"
+        }
+      },
+      "id": "a44c1ba7-e7d6-4c5c-b2de-b32065014fba",
+      "name": "Site Report Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        -880,
+        0
+      ],
+      "webhookId": "a1c3303b-251a-4c1c-a282-5eddb4e33cac"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-6",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {}
+      },
+      "id": "0b8e08fb-69c3-4f1d-b3a8-9d4faf9e9999",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        -624,
+        220
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "7L0fo2zn1XoeG6Nu",
+          "name": "Anthropic account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"site_name\": \"\",\n  \"report_date\": \"\",\n  \"reported_by\": \"\",\n  \"supervisor\": \"\",\n  \"work_done\": \"\",\n  \"labour_summary\": \"\",\n  \"materials_needed\": \"\",\n  \"materials_on_site\": \"\",\n  \"expenditure\": \"\",\n  \"next_day_plan\": \"\",\n  \"visitors\": \"\",\n  \"challenges\": \"\",\n  \"other_notes\": \"\"\n}",
+        "autoFix": true
+      },
+      "id": "3d7188f2-7683-4a3e-91fa-28106beed524",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        -464,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Site: {{ $json['Site Name'] }}\nDate: {{ $json['Report Date'] }}\n\nReport text (site admin's own words, format varies):\n{{ $json['Report Text'] }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are a data extraction assistant for Denca Contractors Kenya Limited. Site admins send daily reports from construction sites, and every admin writes them differently \u2014 different section names, different order, some sections left blank or skipped entirely. Your job is to read whatever report text you're given and pull the information into the fixed set of fields you've been asked to return, regardless of how it's formatted or labeled in the original.\n\nRules:\n1. Only extract information that is actually present in the report. If a field isn't mentioned anywhere, return it as an empty string \u2014 never guess or invent a value.\n2. Match information by meaning, not exact wording. Headings like \"Labour\", \"Workers\", or \"Manpower\" all map to labour_summary; \"Material needed\", \"Materials required\", or \"Supplies needed\" all map to materials_needed.\n3. For labour_summary, capture the worker counts, categories (skilled/semi-skilled/unskilled/security etc.) and rates exactly as written, as a short summary \u2014 don't do any math or convert it to a single number.\n4. If the report mentions site visitors, inspections, or people who came to site, put that under visitors.\n5. Anything relevant that doesn't cleanly fit one of the other fields goes into other_notes rather than being dropped.\n6. Use the Site Name and Report Date given to you directly for site_name and report_date \u2014 don't try to re-extract those from the report text."
+        }
+      },
+      "id": "b6c10e1b-2cc9-4eae-a9d7-3d0e8b4b3d4e",
+      "name": "Site Report Parser Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -624,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": ""
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "site_name": "={{ $json.output.site_name }}",
+            "report_date": "={{ $json.output.report_date }}",
+            "reported_by": "={{ $json.output.reported_by }}",
+            "supervisor": "={{ $json.output.supervisor }}",
+            "work_done": "={{ $json.output.work_done }}",
+            "labour_summary": "={{ $json.output.labour_summary }}",
+            "materials_needed": "={{ $json.output.materials_needed }}",
+            "materials_on_site": "={{ $json.output.materials_on_site }}",
+            "expenditure": "={{ $json.output.expenditure }}",
+            "next_day_plan": "={{ $json.output.next_day_plan }}",
+            "visitors": "={{ $json.output.visitors }}",
+            "challenges": "={{ $json.output.challenges }}",
+            "other_notes": "={{ $json.output.other_notes }}",
+            "raw_report_text": "={{ $('Site Report Form').item.json['Report Text'] }}",
+            "submitted_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        }
+      },
+      "id": "b1b57511-d348-4e56-a719-40af8e506b58",
+      "name": "Append to Site Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -304,
+        0
+      ],
+      "credentials": {}
+    }
+  ],
+  "connections": {
+    "Site Report Form": {
+      "main": [
+        [
+          {
+            "node": "Site Report Parser Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Site Report Parser Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Site Report Parser Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Site Report Parser Agent": {
+      "main": [
+        [
+          {
+            "node": "Append to Site Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Nairobi"
+  }
+}
