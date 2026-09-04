@@ -113,7 +113,8 @@
             "visit": "={{ $json['Visit'] }}",
             "challenges": "={{ $json['Challenges'] }}",
             "notes": "={{ $json['Notes'] }}",
-            "submitted_at": "={{ $now.toISO() }}"
+            "submitted_at": "={{ $now.toISO() }}",
+            "raw_submission": "={{ Object.entries($json).map(([field, value]) => field + ': ' + value).join('\\n') }}"
           },
           "matchingColumns": [],
           "schema": []
