@@ -1694,12 +1694,13 @@
           "mappingMode": "defineBelow",
           "value": {
             "company_name": "={{ $('Loop Over Follow-ups').item.json.company_name }}",
+            "thread_id": "={{ $('Loop Over Follow-ups').item.json.thread_id }}",
             "followup_status": "Replied",
             "followup_date": "={{ $now.toISO() }}",
             "row_number": 0
           },
           "matchingColumns": [
-            "company_name"
+            "thread_id"
           ],
           "schema": [
             {
@@ -1973,12 +1974,13 @@
           "mappingMode": "defineBelow",
           "value": {
             "company_name": "={{ $('Loop Over Follow-ups').item.json.company_name }}",
+            "thread_id": "={{ $('Loop Over Follow-ups').item.json.thread_id }}",
             "followup_status": "Sent",
             "followup_date": "={{ $now.toISO() }}",
             "row_number": 0
           },
           "matchingColumns": [
-            "company_name"
+            "thread_id"
           ],
           "schema": [
             {
@@ -2194,12 +2196,13 @@
           "mappingMode": "defineBelow",
           "value": {
             "company_name": "={{ $('Loop Over Follow-ups').item.json.company_name }}",
+            "thread_id": "={{ $('Loop Over Follow-ups').item.json.thread_id }}",
             "followup_status": "Follow-up failed",
             "followup_date": "={{ $now.toISO() }}",
             "row_number": 0
           },
           "matchingColumns": [
-            "company_name"
+            "thread_id"
           ],
           "schema": [
             {
