@@ -1910,12 +1910,14 @@
     {
       "parameters": {
         "resource": "message",
-        "operation": "reply",
-        "messageId": "={{ $('Loop Over Follow-ups').item.json.message_id }}",
+        "operation": "send",
+        "sendTo": "={{ $('Loop Over Follow-ups').item.json.contact_email }}",
+        "subject": "={{ $json.followup_subject }}",
         "emailType": "html",
         "message": "={{ $json.followup_body }}",
         "options": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "threadId": "={{ $('Loop Over Follow-ups').item.json.thread_id }}"
         }
       },
       "id": "f1a2b3c4-0008-4aaa-8bbb-000000000008",
