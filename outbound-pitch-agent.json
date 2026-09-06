@@ -511,7 +511,7 @@
     {
       "parameters": {
         "resume": "timeInterval",
-        "amount": "={{ Math.floor(Math.random() * (300 - 120 + 1)) + 120 }}",
+        "amount": "={{ Math.floor(Math.random() * (240 - 120 + 1)) + 120 }}",
         "unit": "seconds"
       },
       "id": "a1c3f6e0-2b4d-4c9a-9e7f-3d5b6c8a1f02",
@@ -1938,7 +1938,7 @@
     {
       "parameters": {
         "resume": "timeInterval",
-        "amount": "={{ Math.floor(Math.random() * (300 - 120 + 1)) + 120 }}",
+        "amount": "={{ Math.floor(Math.random() * (240 - 120 + 1)) + 120 }}",
         "unit": "seconds"
       },
       "id": "f1a2b3c4-0009-4aaa-8bbb-000000000009",
