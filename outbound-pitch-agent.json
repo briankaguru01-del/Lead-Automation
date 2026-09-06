@@ -1897,7 +1897,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Node: Build Follow-up Email\n// Short, distinct bump message sent as a reply in the original thread.\n// Deliberately not a re-pitch: brief, low-pressure, references the\n// original subject rather than repeating the pain points.\n\nconst originalSubject = $('Loop Over Follow-ups').item.json.subject_sent || '';\nconst subject = originalSubject.toLowerCase().startsWith('re:')\n  ? originalSubject\n  : `Re: ${originalSubject}`;\n\nconst body = `<div style=\"font-family:Arial, sans-serif; font-size:14px; line-height:1.6; color:#222222;\">\n<p style=\"margin:0 0 14px 0;\">Wanted to bump this back up in case it got buried. No pressure either way, just flagging it again in case it's useful.</p>\n<p style=\"margin:0 0 14px 0;\">Happy to jump on a quick call if it's worth exploring.</p>\n<p style=\"margin:20px 0 4px 0;\">Brian</p>\n</div>`;\n\nreturn [{ json: { followup_subject: subject, followup_body: body } }];"
+        "jsCode": "// Node: Build Follow-up Email\n// Constructs a raw RFC 2822 MIME message threaded into the original\n// pitch conversation via In-Reply-To/References headers plus the\n// Gmail threadId, then base64url-encodes it for the Gmail API's\n// messages.send endpoint. Built manually (rather than via n8n's\n// Gmail node) because the \"Reply\" operation auto-addresses based on\n// the original message's sender (us), and \"Send\" has no way to\n// attach a new message to an existing thread.\n\nconst row = $('Loop Over Follow-ups').item.json;\nconst headers = $json.payload?.headers || [];\nconst messageIdHeader = (headers.find(h => h.name.toLowerCase() === 'message-id') || {}).value || '';\n\nconst originalSubject = row.subject_sent || '';\nconst subject = originalSubject.toLowerCase().startsWith('re:')\n  ? originalSubject\n  : `Re: ${originalSubject}`;\n\nconst bodyHtml = `<div style=\"font-family:Arial, sans-serif; font-size:14px; line-height:1.6; color:#222222;\">\n<p style=\"margin:0 0 14px 0;\">Wanted to bump this back up in case it got buried. No pressure either way, just flagging it again in case it's useful.</p>\n<p style=\"margin:0 0 14px 0;\">Happy to jump on a quick call if it's worth exploring.</p>\n<p style=\"margin:20px 0 4px 0;\">Brian</p>\n</div>`;\n\nconst mime = [\n  `To: ${row.contact_email}`,\n  `Subject: ${subject}`,\n  messageIdHeader ? `In-Reply-To: ${messageIdHeader}` : null,\n  messageIdHeader ? `References: ${messageIdHeader}` : null,\n  'Content-Type: text/html; charset=UTF-8',\n  '',\n  bodyHtml,\n].filter(line => line !== null).join('\\r\\n');\n\nconst raw = Buffer.from(mime, 'utf-8')\n  .toString('base64')\n  .replace(/\\+/g, '-')\n  .replace(/\\//g, '_')\n  .replace(/=+$/, '');\n\nreturn [{ json: { raw, threadId: row.thread_id } }];"
       },
       "id": "f1a2b3c4-0007-4aaa-8bbb-000000000007",
       "name": "Build Follow-up Email",
@@ -1910,21 +1910,19 @@
     },
     {
       "parameters": {
-        "resource": "message",
-        "operation": "send",
-        "sendTo": "={{ $('Loop Over Follow-ups').item.json.contact_email }}",
-        "subject": "={{ $json.followup_subject }}",
-        "emailType": "html",
-        "message": "={{ $json.followup_body }}",
-        "options": {
-          "appendAttribution": false,
-          "threadId": "={{ $('Loop Over Follow-ups').item.json.thread_id }}"
-        }
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { raw: $json.raw, threadId: $json.threadId } }}",
+        "options": {}
       },
       "id": "f1a2b3c4-0008-4aaa-8bbb-000000000008",
       "name": "Send Follow-up Email",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         -400,
         620
@@ -2396,6 +2394,29 @@
           "name": "Google Sheets account 2"
         }
       }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://gmail.googleapis.com/gmail/v1/users/me/messages/{{ $('Loop Over Follow-ups').item.json.message_id }}?format=metadata&metadataHeaders=Message-Id",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "options": {}
+      },
+      "id": "f1a2b3c4-0012-4aaa-8bbb-000000000012",
+      "name": "Get Original Message Metadata",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -720,
+        620
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "C2SL161M8XEhFMe7",
+          "name": "Gmail account 3"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -2819,7 +2840,7 @@
         ],
         [
           {
-            "node": "Build Follow-up Email",
+            "node": "Get Original Message Metadata",
             "type": "main",
             "index": 0
           }
@@ -2893,6 +2914,17 @@
         [
           {
             "node": "Loop Over Follow-ups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Original Message Metadata": {
+      "main": [
+        [
+          {
+            "node": "Build Follow-up Email",
             "type": "main",
             "index": 0
           }
