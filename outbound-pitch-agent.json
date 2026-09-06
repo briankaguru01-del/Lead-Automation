@@ -511,7 +511,7 @@
     {
       "parameters": {
         "resume": "timeInterval",
-        "amount": "={{ Math.floor(Math.random() * (240 - 120 + 1)) + 120 }}",
+        "amount": "={{ $json.waitSeconds }}",
         "unit": "seconds"
       },
       "id": "a1c3f6e0-2b4d-4c9a-9e7f-3d5b6c8a1f02",
@@ -1938,7 +1938,7 @@
     {
       "parameters": {
         "resume": "timeInterval",
-        "amount": "={{ Math.floor(Math.random() * (240 - 120 + 1)) + 120 }}",
+        "amount": "={{ $json.waitSeconds }}",
         "unit": "seconds"
       },
       "id": "f1a2b3c4-0009-4aaa-8bbb-000000000009",
@@ -2417,6 +2417,32 @@
           "name": "Gmail account 3"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Node: Compute Wait Time\n// Computes the random pacing delay as a plain number in a Code node,\n// then the Wait node just references this field directly. The Wait\n// node's own \"Amount\" field is strictly numeric, and evaluating the\n// random-range expression inline there was producing a corrupted\n// string value (a stray leading \"=\") that failed type validation.\n\nreturn $input.all().map(item => ({\n  json: {\n    ...item.json,\n    waitSeconds: Math.floor(Math.random() * (240 - 120 + 1)) + 120\n  }\n}));"
+      },
+      "id": "f1a2b3c4-0013-4aaa-8bbb-000000000013",
+      "name": "Compute Send Wait Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Node: Compute Wait Time\n// Computes the random pacing delay as a plain number in a Code node,\n// then the Wait node just references this field directly. The Wait\n// node's own \"Amount\" field is strictly numeric, and evaluating the\n// random-range expression inline there was producing a corrupted\n// string value (a stray leading \"=\") that failed type validation.\n\nreturn $input.all().map(item => ({\n  json: {\n    ...item.json,\n    waitSeconds: Math.floor(Math.random() * (240 - 120 + 1)) + 120\n  }\n}));"
+      },
+      "id": "f1a2b3c4-0014-4aaa-8bbb-000000000014",
+      "name": "Compute Follow-up Wait Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        620
+      ]
     }
   ],
   "pinData": {},
@@ -2598,7 +2624,7 @@
       "main": [
         [
           {
-            "node": "Wait Before Next Send",
+            "node": "Compute Send Wait Time",
             "type": "main",
             "index": 0
           }
@@ -2873,7 +2899,7 @@
       "main": [
         [
           {
-            "node": "Wait Before Next Follow-up",
+            "node": "Compute Follow-up Wait Time",
             "type": "main",
             "index": 0
           }
@@ -2925,6 +2951,28 @@
         [
           {
             "node": "Build Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Send Wait Time": {
+      "main": [
+        [
+          {
+            "node": "Wait Before Next Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Follow-up Wait Time": {
+      "main": [
+        [
+          {
+            "node": "Wait Before Next Follow-up",
             "type": "main",
             "index": 0
           }
