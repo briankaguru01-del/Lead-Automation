@@ -1,0 +1,2081 @@
+{
+  "name": "Rivertown Food Tours - Restaurant Notification Automation (Demo)",
+  "nodes": [
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Rivertown Food Tours - Demo Data ",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1037160182,
+          "mode": "list",
+          "cachedResultName": "raw_import",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit#gid=1037160182"
+        },
+        "options": {}
+      },
+      "id": "535b159b-caa6-4db5-81ae-80f2c07c7934",
+      "name": "Read Raw Import Tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -416,
+        -16
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_GOOGLE_SHEETS_CRED_ID",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nif (items.length === 0) return [];\n\nconst headerRowValues = Object.keys(items[0].json);\nconst dataRows = items.map(item => Object.values(item.json));\nconst allRows = [headerRowValues, ...dataRows];\n\nfunction cell(v) { return (v || '').toString().trim(); }\n\nfunction cleanNotes(raw) {\n  if (!raw) return '';\n  const idx = raw.indexOf('####');\n  if (idx === -1) return raw.trim();\n  return raw.substring(0, idx).trim();\n}\n\n// Pulls a trailing name out of parentheses, e.g. \"...(Ramirez)\" -> \"Ramirez\".\n// Returns null if the note doesn't end that way.\nfunction extractTrailingName(text) {\n  const match = text.match(/\\(([^)]+)\\)\\s*$/);\n  return match ? match[1].trim() : null;\n}\n\nconst realHeaders = allRows[1].map(h => cell(h));\nconst output = [];\n\nfor (let i = 2; i < allRows.length; i++) {\n  const row = allRows[i];\n  const bookingIdRaw = cell(row[realHeaders.indexOf('Booking ID')]);\n  if (!bookingIdRaw.startsWith('#')) continue;\n\n  const rowObj = {};\n  realHeaders.forEach((h, idx) => { rowObj[h] = cell(row[idx]); });\n\n  // Only process guide rows. Excludes driver, \"Training Part 2: shadow\", and any other\n  // crew role FareHarbor might add later. Confirmed with the team: a trainee/shadow is\n  // never the sole guide on a booking, so it's always safe to skip every non-guide row.\n  const crewRole = (rowObj['Crew role'] || '').toLowerCase();\n  if (crewRole !== 'guide') continue;\n\n  // Merge Private Headline and Booking Notes\n  const privateHeadline = cleanNotes(rowObj['Private Headline'] || '');\n  const bookingNotesRaw = cleanNotes(rowObj['Booking Notes'] || '');\n  const booking_notes = [...new Set([privateHeadline, bookingNotesRaw].filter(n => n.trim().length > 0))]\n  .join(' | ');\n\n  // FareHarbor's Private Headline field is known to sometimes carry stale text over from a\n  // DIFFERENT booking on the same departure -- confirmed cases: \"2 non-drinkers (Whitfield)\"\n  // appearing on Nakamura's booking, and \"1 vegetarian... (Ramirez)\" appearing on James\n  // Delgado's booking. When a note ends in a name, check the RAW (uncleaned) Booking Notes\n  // text for this same row -- it still contains \"Customers:ActualName\" even though\n  // cleanNotes strips that whole section out of booking_notes above. If the name doesn't\n  // show up there, this note almost certainly belongs to someone else's booking.\n  const rawBookingNotesField = rowObj['Booking Notes'] || '';\n  const trailingName = extractTrailingName(booking_notes);\n  const notesVerified = trailingName === null\n    ? true // no name attached, nothing to contradict -- trust it, same as before\n    : rawBookingNotesField.toLowerCase().includes(trailingName.toLowerCase());\n\n  const availabilityRaw = rowObj['Availability'] || '';\n  const [datePart, timePart] = availabilityRaw.split(' at ');\n\n  output.push({\n    json: {\n      booking_id: bookingIdRaw,\n      item_name: rowObj['Item'],\n      crew_member: rowObj['Crew member'],\n      cancelled: rowObj['Cancelled?'],\n      last_booked_at: rowObj['Last Booked At'],\n      cancelled_at: rowObj['Cancelled At'] || null,\n      availability_date: (datePart || '').trim(),\n      availability_time: (timePart || '').trim(),\n      booking_notes: booking_notes,\n      notes_verified: notesVerified,\n      pax: parseInt(rowObj['# of Pax'], 10) || 0,\n      source: 'sheet_paste',\n      last_updated: new Date().toISOString()\n    }\n  });\n}\n\n// Deduplicate by booking_id as a safety net against any genuine duplicate guide rows.\nconst seen = new Set();\nconst deduped = output.filter(item => {\n  if (seen.has(item.json.booking_id)) return false;\n  seen.add(item.json.booking_id);\n  return true;\n});\n\nreturn deduped;"
+      },
+      "id": "a03c950b-449c-4468-b46a-f4d28f5ffa91",
+      "name": "Parse FareHarbor CSV Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "bookings",
+        "returnAll": true,
+        "orderBy": "=",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "booking_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.booking_id }}"
+            }
+          ]
+        }
+      },
+      "id": "e96c7d0d-061c-4ca9-99d3-8df8a7f5ebf5",
+      "name": "Check If Booking Exists",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        48,
+        -16
+      ],
+      "executeOnce": false,
+      "retryOnFail": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_WITH_YOUR_SUPABASE_CRED_ID",
+          "name": "Supabase - Rivertown Food Tours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsedBookings = $('Parse FareHarbor CSV Rows').all().map(i => i.json);\nconst existingBookings = $input.all().map(i => i.json);\n\nconst results = parsedBookings.map(booking => {\n  const existing = existingBookings.find(e => e.booking_id === booking.booking_id);\n\n  const hasChanged = !existing || (\n    String(existing.pax) !== String(booking.pax) ||\n    (existing.booking_notes || '') !== (booking.booking_notes || '') ||\n    (existing.cancelled || '') !== (booking.cancelled || '') ||\n    (existing.crew_member || '') !== (booking.crew_member || '')\n  );\n\n  return {\n    json: {\n      ...booking,\n      booking_exists: !!existing,\n      booking_changed: hasChanged\n    }\n  };\n});\n\nconst anyChanged = results.some(r => r.json.booking_changed);\nif (!anyChanged) return [{ json: { no_changes: true } }];\n\nreturn results;"
+      },
+      "id": "bcab4e54-b255-4528-9a38-64b2174c9092",
+      "name": "Merge Check Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json.booking_exists }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1a446817-672d-4468-978f-d0a70e099602",
+      "name": "Booking Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "bookings",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "booking_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.booking_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "item_name",
+              "fieldValue": "={{ $json.item_name }}"
+            },
+            {
+              "fieldId": "crew_member",
+              "fieldValue": "={{ $json.crew_member }}"
+            },
+            {
+              "fieldId": "cancelled",
+              "fieldValue": "={{ $json.cancelled }}"
+            },
+            {
+              "fieldId": "cancelled_at",
+              "fieldValue": "={{ $json.cancelled_at }}"
+            },
+            {
+              "fieldId": "availability_date",
+              "fieldValue": "={{ $json.availability_date }}"
+            },
+            {
+              "fieldId": "availability_time",
+              "fieldValue": "={{ $json.availability_time }}"
+            },
+            {
+              "fieldId": "booking_notes",
+              "fieldValue": "={{ $json.booking_notes }}"
+            },
+            {
+              "fieldId": "pax",
+              "fieldValue": "={{ $json.pax }}"
+            },
+            {
+              "fieldId": "source",
+              "fieldValue": "={{ $json.source }}"
+            },
+            {
+              "fieldId": "last_updated",
+              "fieldValue": "={{ $json.last_updated }}"
+            }
+          ]
+        }
+      },
+      "id": "b41b2aa6-f7ef-4a0c-9e83-ca18a2ce649f",
+      "name": "Update Booking",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        -80
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_WITH_YOUR_SUPABASE_CRED_ID",
+          "name": "Supabase - Rivertown Food Tours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "bookings",
+        "dataToSend": "autoMapInputData",
+        "inputsToIgnore": "booking_exists, booking_changed, notes_verified"
+      },
+      "id": "ba508f93-7efa-4838-9643-b24185667ace",
+      "name": "Create Booking",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1024,
+        80
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_WITH_YOUR_SUPABASE_CRED_ID",
+          "name": "Supabase - Rivertown Food Tours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const allBookings = $('Parse FareHarbor CSV Rows').all().map(i => i.json);\n\nconst changedIds = new Set();\ntry {\n  for (const item of $('Changed?').all()) changedIds.add(item.json.booking_id);\n} catch (e) {}\ntry {\n  for (const item of $('Create Booking').all()) changedIds.add(item.json.booking_id);\n} catch (e) {}\nif (changedIds.size === 0) {\n  for (const item of $input.all()) changedIds.add(item.json.booking_id);\n}\n\nconst groups = {};\n\nfor (const b of allBookings) {\n  const key = `${b.item_name}|||${b.availability_date}|||${b.availability_time}`;\n  if (!groups[key]) groups[key] = { tour_name: b.item_name, date: b.availability_date, time: b.availability_time, bookings: [], hasChange: false };\n  groups[key].bookings.push(b);\n  if (changedIds.has(b.booking_id)) groups[key].hasChange = true;\n}\n\nconst output = [];\n\nfor (const key in groups) {\n  const g = groups[key];\n\n  const activeBookings = g.bookings.filter(b => (b.cancelled || '').toLowerCase() !== 'yes');\n  const allCancelled = g.bookings.length > 0 && activeBookings.length === 0;\n  const totalPax = activeBookings.reduce((sum, b) => sum + (b.pax || 0), 0);\n\n  // Only trust bookings that passed the name-verification check for anything derived from\n  // note TEXT -- dietary notes, bourbon upgrades, drink opt-ins. A booking that failed\n  // verification almost certainly has another booking's stale Private Headline, not its\n  // own, so counting it here would double-count whatever the real booking already reports.\n  // Guest counts (totalPax, booking_count above) are untouched -- those come from real\n  // booking data, not note text, so they were never part of this bug.\n  const verifiedBookings = activeBookings.filter(b => b.notes_verified !== false);\n\n  const notesConcat = verifiedBookings\n  .map(b => b.booking_notes)\n  .filter(n => n && n.trim().length > 0)\n  .map((n, i) => `[Booking ${i + 1}] ${n}`)\n  .join(' | ');\n\n  const crewMember = (g.bookings.find(b => b.crew_member && b.crew_member.trim().length > 0) || {}).crew_member || '';\n\n  let bourbonUpgradeCount = 0;\n  for (const b of verifiedBookings) {\n    const text = b.booking_notes || '';\n    const matches = text.matchAll(/(\\d+)\\s*bourbon upgrade/gi);\n    for (const m of matches) {\n      bourbonUpgradeCount += parseInt(m[1], 10) || 0;\n    }\n  }\n\n  let drinkingCount = 0;\n  for (const b of verifiedBookings) {\n    const text = b.booking_notes || '';\n    const matches = text.matchAll(/(\\d+)\\s*drinking/gi);\n    for (const m of matches) {\n      drinkingCount += parseInt(m[1], 10) || 0;\n    }\n  }\n\n  output.push({\n    json: {\n      tour_name: g.tour_name,\n      date: g.date,\n      time: g.time,\n      total_pax: totalPax,\n      booking_count: activeBookings.length,\n      notes_concat: notesConcat,\n      crew_member: crewMember,\n      all_cancelled: allCancelled,\n      has_changes: g.hasChange,\n      bourbon_upgrade_count: bourbonUpgradeCount,\n      drinking_count: drinkingCount\n    }\n  });\n}\n\nreturn output;"
+      },
+      "id": "00fbd847-3985-433a-a3a8-27956a419002",
+      "name": "Group By Departure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1584,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "departure_drafts",
+        "returnAll": true
+      },
+      "id": "f227f13d-3341-4821-9070-516076d11c77",
+      "name": "Get Departure Drafts",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -608,
+        384
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_WITH_YOUR_SUPABASE_CRED_ID",
+          "name": "Supabase - Rivertown Food Tours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "jordan@rivertownfoodtours-demo.example",
+        "subject": "No changes today. Nothing to review",
+        "message": "Hi Jordan,\n\nJust a quick automated check-in: nothing has changed since the last batch. No new bookings, no cancellations, no updated notes to flag.\n\nNothing needs your review today.",
+        "options": {
+          "appendAttribution": false,
+          "ccList": "morgan@rivertownfoodtours-demo.example"
+        }
+      },
+      "id": "5c07f72e-f128-4bf4-9880-6ed14d89f0ec",
+      "name": "Send No Changes Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        720,
+        -192
+      ],
+      "webhookId": "84638376-3a82-49f6-8a3c-c1eab581778b",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_YOUR_GMAIL_CRED_ID",
+          "name": "Rivertown Food Tours Email API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Rivertown Food Tours - Demo Data ",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 167060350,
+          "mode": "list",
+          "cachedResultName": "Cellar Row",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit#gid=167060350"
+        },
+        "options": {}
+      },
+      "id": "e2b66aac-5fde-485e-b639-be6be9ec019f",
+      "name": "Read Cellar Row Tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        48,
+        384
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_GOOGLE_SHEETS_CRED_ID",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction rowValues(rowJson) {\n  const { row_number, ...rest } = rowJson;\n  return Object.values(rest);\n}\n\n// Row 1 of the sheet became this read's own field key names, not a\n// data row - so it never shows up in items at all. Object.keys() on\n// any item recovers those original key names, which are exactly row\n// 1's original cell text. The content doesn't matter here (it's just\n// this tour's title), but a placeholder needs to sit at position 0 so\n// every real row after it lines up correctly.\nconst { row_number: _drop, ...firstItemKeys } = items[0].json;\nconst headerRowValues = Object.keys(firstItemKeys);\n\nconst dataRows = items.map(item => rowValues(item.json));\nconst allRows = [headerRowValues, ...dataRows];\n\nfunction findSection(rows, markerName) {\n  const startIdx = rows.findIndex(r => (r[0] || '').toString().trim().toUpperCase() === markerName);\n  if (startIdx === -1) return [];\n  const headerRow = rows[startIdx + 1] || [];\n  const result = [];\n  for (let i = startIdx + 2; i < rows.length; i++) {\n    const row = rows[i];\n    const isBlank = !row || row.every(c => !c || c.toString().trim() === '');\n    const isNextMarker = row && ['STOPS', 'MENU', 'SUBSTITUTIONS'].includes((row[0] || '').toString().trim().toUpperCase());\n    if (isBlank || isNextMarker) break;\n    const obj = {};\n    headerRow.forEach((h, idx) => { obj[(h || '').toString().trim()] = (row[idx] || '').toString().trim(); });\n    result.push(obj);\n  }\n  return result;\n}\n\nreturn { json: { stops: findSection(allRows, 'STOPS'), menu_items: findSection(allRows, 'MENU'), substitutions: findSection(allRows, 'SUBSTITUTIONS') } };"
+      },
+      "id": "24a6bdee-f039-4484-a3c0-4ae2e671fdef",
+      "name": "Parse Cellar Row Sections",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Rivertown Food Tours - Demo Data ",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 2103506227,
+          "mode": "list",
+          "cachedResultName": "Shadow Street",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit#gid=2103506227"
+        },
+        "options": {}
+      },
+      "id": "6ec30550-82f2-4996-9e2d-2b84b392b5c4",
+      "name": "Read Shadow Street Tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        608,
+        384
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_GOOGLE_SHEETS_CRED_ID",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction rowValues(rowJson) {\n  const { row_number, ...rest } = rowJson;\n  return Object.values(rest);\n}\n\n// Row 1 of the sheet became this read's own field key names, not a\n// data row - so it never shows up in items at all. Object.keys() on\n// any item recovers those original key names, which are exactly row\n// 1's original cell text. The content doesn't matter here (it's just\n// this tour's title), but a placeholder needs to sit at position 0 so\n// every real row after it lines up correctly.\nconst { row_number: _drop, ...firstItemKeys } = items[0].json;\nconst headerRowValues = Object.keys(firstItemKeys);\n\nconst dataRows = items.map(item => rowValues(item.json));\nconst allRows = [headerRowValues, ...dataRows];\n\nfunction findSection(rows, markerName) {\n  const startIdx = rows.findIndex(r => (r[0] || '').toString().trim().toUpperCase() === markerName);\n  if (startIdx === -1) return [];\n  const headerRow = rows[startIdx + 1] || [];\n  const result = [];\n  for (let i = startIdx + 2; i < rows.length; i++) {\n    const row = rows[i];\n    const isBlank = !row || row.every(c => !c || c.toString().trim() === '');\n    const isNextMarker = row && ['STOPS', 'MENU', 'SUBSTITUTIONS'].includes((row[0] || '').toString().trim().toUpperCase());\n    if (isBlank || isNextMarker) break;\n    const obj = {};\n    headerRow.forEach((h, idx) => { obj[(h || '').toString().trim()] = (row[idx] || '').toString().trim(); });\n    result.push(obj);\n  }\n  return result;\n}\n\nreturn { json: { stops: findSection(allRows, 'STOPS'), menu_items: findSection(allRows, 'MENU'), substitutions: findSection(allRows, 'SUBSTITUTIONS') } };"
+      },
+      "id": "04354d13-2023-4919-b68d-81b34bce8c1e",
+      "name": "Parse Shadow Street Sections",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const departures = $('Group By Departure').all().map(i => i.json).filter(d => !d.all_cancelled);\n\nconst tourTabs = {\n  'cellar row: wine & food pairing tour': $('Parse Cellar Row Sections').first().json,\n  \"shadow street: murder, crime, & ghost tour of rivertown\": $('Parse Shadow Street Sections').first().json,\n  'echoes of the speakeasy: ghosts, cocktails, & bites tour': $('Parse Speakeasy Sections').first().json,\n  'secrets of the arts quarter: food & history tour': $('Parse Secrets of the Arts Quarter Sections').first().json,\n  'rivertown legends: downtown heritage food & history tour': $('Parse Rivertown Legends Sections').first().json,\n  'historic walking tour of old elm district: food, spirits, history & architecture': $('Parse Old Elm District Sections').first().json,\n  'the heritage trolley: distillery tour, tasting rooms & spirits experiences': $('Parse Heritage Trolley Sections').first().json\n};\n\nfunction getDayOfWeek(dateStr) {\n  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];\n  const d = new Date(dateStr + 'T12:00:00');\n  return days[d.getDay()];\n}\n\nfunction pickStop(stops, restaurantName, departureDay) {\n  const candidates = stops.filter(s =>\n    (s.restaurant_name || '').trim().toLowerCase() === restaurantName.trim().toLowerCase()\n  );\n  const dayMatch = candidates.find(s =>\n    (s.day_of_week || '').trim().toLowerCase() === departureDay.toLowerCase()\n  );\n  if (dayMatch) return dayMatch;\n  return candidates.find(s =>\n    !s.day_of_week || s.day_of_week.trim() === '' || s.day_of_week.trim().toLowerCase() === 'all'\n  );\n}\n\nconst output = [];\n\nfor (const dep of departures) {\n  const tabData = tourTabs[(dep.tour_name || '').trim().toLowerCase()];\n  if (!tabData) continue;\n\n  const departureDay = getDayOfWeek(dep.date);\n  const addedRestaurants = new Set();\n  const sortedStops = [...tabData.stops].sort((a, b) =>\n    (parseInt(a.stop_order) || 0) - (parseInt(b.stop_order) || 0)\n  );\n\n  const uniqueRestaurants = [];\n  for (const stop of sortedStops) {\n    const key = (stop.restaurant_name || '').trim().toLowerCase();\n    if (!addedRestaurants.has(key)) {\n      addedRestaurants.add(key);\n      uniqueRestaurants.push(stop.restaurant_name);\n    }\n  }\n\n  for (const restaurantName of uniqueRestaurants) {\n    const stop = pickStop(tabData.stops, restaurantName, departureDay);\n    if (!stop) continue;\n\n    const restaurantMenuItems = tabData.menu_items.filter(m =>\n      (m.restaurant_name || '').trim().toLowerCase() === restaurantName.trim().toLowerCase()\n    );\n\n    const i = output.length;\n    output.push({\n      json: {\n        ...dep,\n        restaurant_name: stop.restaurant_name,\n        contact_email: stop.contact_email,\n        stop_order: stop.stop_order,\n        minutes_after_start: stop.minutes_after_start,\n        has_menu: restaurantMenuItems.length > 0,\n        menu_items: restaurantMenuItems,\n        substitutions: tabData.substitutions.filter(s =>\n          (s.restaurant_name || '').trim().toLowerCase() === restaurantName.trim().toLowerCase()\n        )\n      }\n    });\n  }\n}\n\nreturn output;"
+      },
+      "id": "8b89e5fc-e79c-44d5-9460-b65305cee5a1",
+      "name": "Expand Departure To Stops",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1712,
+        752
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json.has_menu }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "65ee0490-a25b-4b7b-a0d8-a69aa3e6507b",
+      "name": "Has Menu?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        1168
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=If the booking notes are empty or blank, return immediately with an empty flags array and nothing else. Do not use the menu or substitution data to infer dietary needs\n\nExtract dietary and allergy flags from these guest booking notes for a group of {{ $json.total_pax }} guests.\n\nNotes: {{ $json.notes_concat }}\n\nNotes: {{ $json.notes_concat }}\n\nThe [Booking N] tags are structural markers only, so you can tell separate guest submissions apart — never include them in your output, and don't let them affect your wording.\n\nCategorize each into one of: gluten, dairy, shellfish, vegetarian, vegan, alcohol, or other (for anything specific that doesn't fit those, like a named allergy or a preference such as \"no red meat\"). Return a count of guests per flag and a short free-text detail.\n\nNever infer or guess a count. If the notes state an exact number (e.g. \"2 guests requested X\"), use that exact number for the flag's count. Never write a vague count like \"some guests\" and never add a hedge like \"ask to clarify.\" If a guest count truly isn't stated anywhere in the notes, do not create a flag for it at all rather than guessing.\n\nTreat each [Booking N] section as completely independent. A flag stated in one booking's section belongs ONLY to that booking — never assume, copy, or apply it to a different [Booking N] section just because they're part of the same group of guests. Only combine counts across multiple bookings when EACH of those bookings independently and explicitly states that same category in its own section. If a category is mentioned in exactly one [Booking N] section, its count is exactly what that one section states — do not double it, do not add anything for the other bookings, even if the departure has a higher total guest count.\n\nThe \"detail\" field must be a plain description only — never restate the number of guests inside it. The count is tracked separately in the \"count\" field and will be added to the final text automatically. For example, write \"no red meat\" or \"vegetarian, will eat shrimp,\" not \"2 guests want no red meat.\"\n\nIf the notes are empty or mention nothing relevant, return an empty flags array.",
+        "hasOutputParser": true
+      },
+      "id": "2b710bf7-0b42-41ca-a55e-9e869eefd626",
+      "name": "Extract Dietary Flags",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        -176,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-6",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {}
+      },
+      "id": "448bb1d1-9f43-4c63-b70a-3683304f51b4",
+      "name": "Anthropic Chat Model (Flags)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        -176,
+        1152
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "REPLACE_WITH_YOUR_ANTHROPIC_CRED_ID",
+          "name": "Rivertown Food Tours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"flags\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"diet_type\": { \"type\": \"string\" },\n          \"count\": { \"type\": \"number\" },\n          \"detail\": { \"type\": \"string\" }\n        }\n      }\n    }\n  },\n  \"required\": [\"flags\"]\n}",
+        "autoFix": true
+      },
+      "id": "230c116c-77d0-4c5e-833e-977f1d6f8e49",
+      "name": "Structured Output Parser (Flags)",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        -32,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const original = $('Expand Departure To Stops').item.json;\nconst totalPax = original.total_pax;\nconst flags = ($json.output && $json.output.flags) || [];\nconst menuItems = original.menu_items || [];\nconst subs = original.substitutions || [];\n\nconst isArtsQuarterTour = (original.tour_name || '').trim().toLowerCase() === 'secrets of the arts quarter: food & history tour';\nconst isLegendsTour = (original.tour_name || '').trim().toLowerCase() === \"rivertown legends: downtown heritage food & history tour\";\nconst drinkingCount = original.drinking_count || 0;\n\nconst veganFlag = flags.find(f => (f.diet_type || '').toLowerCase() === 'vegan');\nconst veganWarning = veganFlag\n  ? `⚠️ VEGAN: ${veganFlag.count} guest(s) marked vegan — this tour cannot accommodate vegan, needs a human to follow up before the tour.`\n  : null;\n\nfunction calcTotal(guestCount, split) {\n  return Math.ceil(guestCount * (parseFloat(split) || 1));\n}\n\nfunction calcArrivalTime(tourTime, minutesAfter) {\n  const [timePart, period] = tourTime.split(' ');\n  const [h, m] = timePart.split(':').map(Number);\n  let total = (h % 12 + (period === 'PM' ? 12 : 0)) * 60 + m + (parseInt(minutesAfter) || 0);\n  const arrH = Math.floor(total / 60) % 24;\n  const arrM = total % 60;\n  const arrPeriod = arrH >= 12 ? 'PM' : 'AM';\n  const display = arrH % 12 || 12;\n  return `${display}:${arrM.toString().padStart(2, '0')} ${arrPeriod}`;\n}\n\nfunction formatDate(dateStr) {\n  const d = new Date(dateStr + 'T12:00:00');\n  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];\n  return `${days[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`;\n}\n\n// Strips a leading \"1/2 \" or \"1/2 of \" off an item name before comparing, so a menu tab\n// using the literal \"1/2 X\" naming convention and a substitutions tab still referencing\n// the old \"X\" name (or vice versa) are still recognized as the same item. This is what\n// broke the Swizzle/O'Shea's/Pin+Proof alcohol substitutions -- the menu tabs got the\n// \"1/2 \" prefix added during the Aug 14 rename, the substitutions tabs didn't.\nfunction normalizeItemName(name) {\n  return (name || '')\n    .toLowerCase()\n    .trim()\n    .replace(/^1\\/2\\s+(of\\s+)?/, '');\n}\n\nfunction reducedCountFor(itemName) {\n  let reduced = 0;\n  const normalizedItemName = normalizeItemName(itemName);\n  for (const flag of flags) {\n    const type = (flag.diet_type || '').toLowerCase();\n    if (type === 'vegan' || type === 'other') continue;\n    if (type === 'alcohol' && isArtsQuarterTour) continue;\n    const sub = subs.find(s => (s.diet_type || '').toLowerCase() === type);\n    if (!sub || !sub.replaces_item) continue;\n    const replacedItems = sub.replaces_item.split(',').map(s => normalizeItemName(s));\n    if (replacedItems.includes(normalizedItemName)) {\n      reduced += flag.count || 0;\n    }\n  }\n  return reduced;\n}\n\nconst orderLines = [];\nconst rawSubLines = [];\n\nfor (const item of menuItems) {\n  const split = parseFloat(item.per_person_split) || 1;\n  const category = (item.category || '').toLowerCase();\n  let guestCount;\n  if (isLegendsTour && category === 'drink') {\n    guestCount = drinkingCount;\n  } else {\n    const reduced = reducedCountFor(item.item_name);\n    guestCount = Math.max(totalPax - reduced, 0);\n  }\n  if (guestCount > 0) {\n    orderLines.push(`${calcTotal(guestCount, split)} ${item.item_name}`);\n  }\n}\n\nfor (const flag of flags) {\n  const type = (flag.diet_type || '').toLowerCase();\n  if (type === 'vegan' || type === 'other') continue;\n  if (type === 'alcohol' && isArtsQuarterTour) continue;\n  const sub = subs.find(s => (s.diet_type || '').toLowerCase() === type);\n  if (!sub || !sub.substitution_item || sub.substitution_item.toLowerCase() === 'none') continue;\n  const replacedItem = menuItems.find(m => normalizeItemName(m.item_name) === normalizeItemName(sub.replaces_item));\n  const split = replacedItem ? (parseFloat(replacedItem.per_person_split) || 1) : 1;\n  const label = sub.note ? `${sub.substitution_item} (${sub.note})` : sub.substitution_item;\n  rawSubLines.push({ count: flag.count || 0, split, label });\n}\n\nconst subMap = {};\nfor (const s of rawSubLines) {\n  if (!subMap[s.label]) subMap[s.label] = { count: 0, split: s.split };\n  subMap[s.label].count += s.count;\n}\nconst substitutionLines = Object.entries(subMap).map(([label, { count, split }]) =>\n  `${calcTotal(count, split)} ${label}`\n);\n\nconst otherNotes = flags\n  .filter(f => {\n    const type = (f.diet_type || '').toLowerCase();\n    if (type === 'vegan') return false;\n    if (type === 'alcohol' && isArtsQuarterTour) return false;\n    if (type === 'other') return true;\n    const sub = subs.find(s => (s.diet_type || '').toLowerCase() === type);\n    return !sub || !sub.substitution_item || sub.substitution_item.toLowerCase() === 'none';\n  })\n  .map(f => {\n    const count = f.count || 0;\n    const guestWord = count === 1 ? 'guest' : 'guests';\n    return `${count} ${guestWord}: ${f.detail}`;\n  });\n\nconst bourbonUpgradeCount = original.bourbon_upgrade_count || 0;\nconst bourbonUpgradeNote = bourbonUpgradeCount > 0\n  ? `${bourbonUpgradeCount} bourbon upgrade${bourbonUpgradeCount === 1 ? '' : 's'}`\n  : null;\n\nconst arrivalTime = calcArrivalTime(original.time, original.minutes_after_start);\nconst formattedDate = formatDate(original.date);\n\nreturn {\n  json: {\n    ...original,\n    order_lines: orderLines,\n    substitution_lines: substitutionLines,\n    other_dietary_notes: otherNotes,\n    vegan_warning: veganWarning,\n    bourbon_upgrade_note: bourbonUpgradeNote,\n    arrival_time: arrivalTime,\n    formatted_date: formattedDate\n  }\n};"
+      },
+      "id": "42a65852-810f-4ffa-9f93-6bf5f3972734",
+      "name": "Compute Order Lines",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const original = $('Expand Departure To Stops').item.json;\n\nfunction toFraction(decimal) {\n  if (decimal >= 1) return null;\n  const common = [\n    [1/2,'1/2'],[1/3,'1/3'],[2/3,'2/3'],[1/4,'1/4'],\n    [3/4,'3/4'],[1/5,'1/5'],[2/5,'2/5'],[3/5,'3/5'],\n    [4/5,'4/5'],[1/6,'1/6'],[5/6,'5/6'],[1/8,'1/8'],\n    [3/8,'3/8'],[5/8,'5/8'],[7/8,'7/8']\n  ];\n  for (const [val, str] of common) {\n    if (Math.abs(decimal - val) < 0.01) return str;\n  }\n  return null;\n}\n\nfunction calcArrivalTime(tourTime, minutesAfter) {\n  const [timePart, period] = tourTime.split(' ');\n  const [h, m] = timePart.split(':').map(Number);\n  let total = (h % 12 + (period === 'PM' ? 12 : 0)) * 60 + m + (parseInt(minutesAfter) || 0);\n  const arrH = Math.floor(total / 60) % 24;\n  const arrM = total % 60;\n  const arrPeriod = arrH >= 12 ? 'PM' : 'AM';\n  const display = arrH % 12 || 12;\n  return `${display}:${arrM.toString().padStart(2, '0')} ${arrPeriod}`;\n}\n\nfunction formatDate(dateStr) {\n  const d = new Date(dateStr + 'T12:00:00');\n  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];\n  return `${days[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`;\n}\n\nconst arrivalTime = calcArrivalTime(original.time, original.minutes_after_start);\nconst formattedDate = formatDate(original.date);\n\nreturn {\n  json: {\n    ...original,\n    order_lines: [],\n    substitution_lines: [],\n    other_dietary_notes: [],\n    vegan_warning: null,\n    arrival_time: arrivalTime,\n    formatted_date: formattedDate\n  }\n};"
+      },
+      "id": "7058c29d-e312-4151-8f96-195f4282e22e",
+      "name": "Set Empty Order Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        1424
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are formatting a restaurant notification email for Rivertown Food Tours. Output only two fields: subject and body. The body must be clean HTML.\n\nSTRICT HTML RULES — follow exactly, no exceptions:\n- Use ONLY <p> and <ul>/<li> tags\n- Within a single block (date/time line, tour name line, guest count line, guide line), ALWAYS use <br> to separate lines — never use separate <p> tags for each line\n- Each departure block is ONE <p> tag containing all four lines separated by <br>\n- Example of correct format: <p>Friday 7/31 5:15 PM<br>Cellar Row<br>9 guests<br>Guide: Alex</p>\n- Example of WRONG format: <p>Friday 7/31 5:15 PM</p><p>Cellar Row</p><p>9 guests</p><p>Guide: Alex</p>\n\nSubject line format: ALWAYS start with the week range from week_range, then two spaces, then \"Tours This Week\", then a pipe, then the restaurant name. Example: \"7/28-8/3  Tours This Week | Garden & Grain\". Never use \"Upcoming visits\" or any other prefix. Never invent the week range — use exactly the value provided in week_range.\n\nFor the shortened tour name use: \"Cellar Row\" for \"Cellar Row: Wine & Food Pairing Tour\", \"Shadow Street\" for \"Shadow Street: Murder, Crime, & Ghost Tour of Rivertown\", and the first meaningful words for any other tour name. Never include the full tour name.\n\nFor each departure in the departures array, output a block in this exact format:\n[formatted_date] [arrival_time]<br>[shortened tour name]<br>[total_pax] guests[, dietary flags from other_dietary_notes comma separated, if any]<br>Guide: [first name only]\nThen a bullet list of order_lines (if any)\nThen a bullet list of substitution_lines (if any), each preceded by \"sub:\"\nThen vegan_warning on its own line if present\nThen bourbon_upgrade_note on its own line if present\nThen a blank line before the next departure block\n\nAfter all departure blocks: Rivertown Food Tours\n\nData:\n- restaurant_name: {{ $json.restaurant_name }}\n- week_range: {{ $json.week_range }}\n- departures: {{ JSON.stringify($json.departures) }}",
+        "hasOutputParser": true
+      },
+      "id": "7abdf16b-9527-4230-b377-d6cdc38abbdf",
+      "name": "Generate Email",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        816,
+        1408
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-6",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {}
+      },
+      "id": "74e03fdd-c50a-43c5-8aaa-1f2c2bcee134",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        816,
+        1600
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "REPLACE_WITH_YOUR_ANTHROPIC_CRED_ID",
+          "name": "Rivertown Food Tours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"subject\": { \"type\": \"string\" },\n    \"body\": { \"type\": \"string\" }\n  },\n  \"required\": [\"subject\", \"body\"]\n}"
+      },
+      "id": "702cf1d4-d297-41db-b043-7947b8d9c459",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        960,
+        1600
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.body }}",
+        "options": {
+          "ccList": "morgan@rivertownfoodtours-demo.example",
+          "sendTo": "={{ $('Group By Restaurant').item.json.contact_email }}"
+        }
+      },
+      "id": "8672ab18-c504-4841-89b6-62ed6e5b1310",
+      "name": "Create Gmail Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2000,
+        1392
+      ],
+      "webhookId": "7c4d5359-5ced-4ea9-b5df-1990a8e2dba8",
+      "retryOnFail": false,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_YOUR_GMAIL_CRED_ID",
+          "name": "Rivertown Food Tours Email API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-4-6",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        -32,
+        1280
+      ],
+      "id": "5d39eb80-32bc-4336-a6bb-07c98bce8c5b",
+      "name": "Anthropic Chat Model1",
+      "credentials": {
+        "anthropicApi": {
+          "id": "REPLACE_WITH_YOUR_ANTHROPIC_CRED_ID",
+          "name": "Rivertown Food Tours"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        320,
+        1408
+      ],
+      "id": "ab6d86ae-b722-4eeb-a1eb-7e62f34080a7",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ef5f99da-d588-46bc-b69d-440343956fe1",
+              "leftValue": "={{ $json.booking_changed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        928,
+        -80
+      ],
+      "id": "ac3bb0b2-2ad0-4734-9864-9b4d09e3b276",
+      "name": "Changed?",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5dfb542a-0a03-478c-8f15-393a47922a5a",
+              "leftValue": "={{ $json.no_changes }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        480,
+        -16
+      ],
+      "id": "afd01367-d36c-4b5a-a1a1-9914f0644525",
+      "name": "Any Changes?"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-4-6",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        2576,
+        -112
+      ],
+      "id": "73b8ef8b-a3cc-474e-a4f2-275864c27e27",
+      "name": "Anthropic Chat Model2",
+      "credentials": {
+        "anthropicApi": {
+          "id": "REPLACE_WITH_YOUR_ANTHROPIC_CRED_ID",
+          "name": "Rivertown Food Tours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"subject\": { \"type\": \"string\" },\n    \"body\": { \"type\": \"string\" }\n  },\n  \"required\": [\"subject\", \"body\"]\n}"
+      },
+      "id": "035050b6-3258-4f08-9a40-1729cba803f6",
+      "name": "Structured Output Parser1",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        2720,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are writing a short internal alert for Rivertown Food Tours staff.\n\nA tour group has been fully cancelled. Write a brief, professional notice for staff, clearly listing which restaurants were scheduled to be visited so they can be notified directly.\n\nDetails:\n- Tour name: {{ $json.tour_name }}\n- Date: {{ $json.date }}\n- Time: {{ $json.time }}\n- Guide: {{ $json.crew_member }}\n- Restaurants scheduled: {{ $json.restaurant_names }}\n\nInstructions:\n- Keep it to one short paragraph\n- Clearly name each restaurant listed above so staff know who to contact\n- Do not include any order details, headcounts, or dietary notes\n- Sign off with \"Rivertown Food Tours\"\n- Return a JSON object with two fields: \"subject\" and \"body\"\n- The body must be in HTML using <p> tags\n- Do not include any text outside the JSON object",
+        "hasOutputParser": true
+      },
+      "id": "730aff59-6e61-4e79-9c58-9f1015859c0d",
+      "name": "Generate Cancellation Email",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        2576,
+        -288
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "dc728c7e-3471-4a6a-9007-c479c78b2419",
+              "leftValue": "={{ $json.all_cancelled }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1856,
+        80
+      ],
+      "id": "9605ac65-7fa4-4f3e-818e-96a17cda57f3",
+      "name": "All Cancelled?"
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "={{ $json.output.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.output.body }}",
+        "options": {
+          "ccList": "morgan@rivertownfoodtours-demo.example",
+          "sendTo": "jordan@rivertownfoodtours-demo.example"
+        }
+      },
+      "id": "0d24f0db-a00f-48b9-8d15-2ca6845788f1",
+      "name": "Create Cancellation Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3040,
+        -288
+      ],
+      "webhookId": "7c4d5359-5ced-4ea9-b5df-1990a8e2dba8",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_YOUR_GMAIL_CRED_ID",
+          "name": "Rivertown Food Tours Email API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "restaurant_drafts",
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -272,
+        384
+      ],
+      "id": "cfa7ac2b-e7b6-412c-a137-2eed2c664a46",
+      "name": "Get Restaurant Drafts",
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_WITH_YOUR_SUPABASE_CRED_ID",
+          "name": "Supabase - Rivertown Food Tours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const allStops = $input.all().map(i => i.json);\nconst restaurantDrafts = $('Get Restaurant Drafts').all().map(i => i.json);\n\nconst groups = {};\n\nfor (const stop of allStops) {\n  if (stop.all_cancelled) continue;\n  const key = (stop.contact_email || '').trim().toLowerCase();\n  if (!groups[key]) {\n    groups[key] = {\n      restaurant_name: stop.restaurant_name,\n      contact_email: stop.contact_email,\n      has_changes: false,\n      departures: []\n    };\n  }\n  if (stop.has_changes) groups[key].has_changes = true;\n  groups[key].departures.push({\n    tour_name: stop.tour_name,\n    date: stop.date,\n    time: stop.time,\n    formatted_date: stop.formatted_date,\n    arrival_time: stop.arrival_time,\n    total_pax: stop.total_pax,\n    crew_member: stop.crew_member,\n    has_changes: stop.has_changes,\n    all_cancelled: stop.all_cancelled,\n    order_lines: stop.order_lines || [],\n    substitution_lines: stop.substitution_lines || [],\n    other_dietary_notes: stop.other_dietary_notes || [],\n    vegan_warning: stop.vegan_warning || null,\n    bourbon_upgrade_note: stop.bourbon_upgrade_note || null\n  });\n}\n\nconst output = [];\n\nfor (const key in groups) {\n  const g = groups[key];\n  if (!g.has_changes) continue;\n  if (g.departures.length === 0) continue;\n\n  g.departures.sort((a, b) => new Date(a.date) - new Date(b.date));\n\n  const earliestDate = new Date(g.departures[0].date + 'T12:00:00');\n  const dayOfWeek = earliestDate.getDay();\n  const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;\n  const monday = new Date(earliestDate);\n  monday.setDate(earliestDate.getDate() + daysToMonday);\n  const sunday = new Date(monday);\n  sunday.setDate(monday.getDate() + 6);\n  const weekRange = `${monday.getMonth() + 1}/${monday.getDate()}-${sunday.getMonth() + 1}/${sunday.getDate()}`;\n\n  const signatureParts = g.departures.map(d =>\n    `${d.date}-${d.time}-${d.total_pax}-${d.order_lines.join(',')}`\n  );\n  const signature = signatureParts.join('|');\n\n  const existing = restaurantDrafts.find(r =>\n    (r.contact_email || '').toLowerCase() === key.toLowerCase()\n  );\n  const lastSignature = existing ? existing.last_draft_signature : null;\n  const restaurantDraftId = existing ? existing.id : null;\n  const restaurantDraftExists = !!(existing && restaurantDraftId != null);\n\n  if (signature === lastSignature) continue;\n\n  output.push({\n    json: {\n      restaurant_name: g.restaurant_name,\n      contact_email: g.contact_email,\n      departures: g.departures,\n      signature: signature,\n      restaurant_draft_id: restaurantDraftId,\n      restaurant_draft_exists: restaurantDraftExists,\n      any_changes: true,\n      week_range: weekRange\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        1408
+      ],
+      "id": "e5cbe8ef-cf1a-43b4-942b-109a76b15deb",
+      "name": "Group By Restaurant",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "47f9a7a4-f2e4-4f24-a316-b5e2bb223e1f",
+              "leftValue": "={{ $('Group By Restaurant').item.json.restaurant_draft_exists }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1216,
+        1408
+      ],
+      "id": "4de8cf1a-a73c-4d66-afdf-3e724019142a",
+      "name": "Restaurant Draft Exists?"
+    },
+    {
+      "parameters": {
+        "tableId": "restaurant_drafts",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "contact_email",
+              "fieldValue": "={{ $('Group By Restaurant').item.json.contact_email }}"
+            },
+            {
+              "fieldId": "restaurant_name",
+              "fieldValue": "={{ $('Group By Restaurant').item.json.restaurant_name }}"
+            },
+            {
+              "fieldId": "last_draft_signature",
+              "fieldValue": "={{ $('Group By Restaurant').item.json.signature }}"
+            },
+            {
+              "fieldId": "draft_generated_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1520,
+        1568
+      ],
+      "id": "1bf403c5-dc35-4040-936a-1a0f17f42432",
+      "name": "Create a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_WITH_YOUR_SUPABASE_CRED_ID",
+          "name": "Supabase - Rivertown Food Tours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "restaurant_drafts",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Group By Restaurant').item.json.restaurant_draft_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "last_draft_signature",
+              "fieldValue": "={{ $('Group By Restaurant').item.json.signature }}"
+            },
+            {
+              "fieldId": "draft_generated_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1504,
+        1264
+      ],
+      "id": "21d985e9-ac75-45e4-a93c-84b6079f5278",
+      "name": "Update Restaurant Draft",
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_WITH_YOUR_SUPABASE_CRED_ID",
+          "name": "Supabase - Rivertown Food Tours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Rivertown Food Tours - Demo Data ",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1037160182,
+          "mode": "list",
+          "cachedResultName": "raw_import",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit#gid=1037160182"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        -16
+      ],
+      "id": "bc998d6e-592a-4292-b35c-4cf06ac6b4e3",
+      "name": "Google Sheets Trigger",
+      "credentials": {
+        "googleSheetsTriggerOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_GOOGLE_SHEETS_TRIGGER_CRED_ID",
+          "name": "Google Sheets Trigger account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Remove AI-added sign-off and append real RFT signature\nconst body = $('Generate Email').item.json.output.body || '';\nconst subject = $('Generate Email').item.json.output.subject || '';\n\nconst restaurantDraftExists = $('Group By Restaurant').item.json.restaurant_draft_exists;\nlet cleaned = body.replace(/<p>Rivertown Food Tours<\\/p>\\s*$/i, '').replace(/<p>Rivertown Food Tours<\\/p>/gi, '').trim();\nif (restaurantDraftExists) {\n  cleaned = '<p>⚠️ Update: changes have been made to one or more of your upcoming bookings below.</p>' + cleaned;\n}\n\nconst signature = `<div dir=\"ltr\" class=\"gmail_signature\"><table cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse: collapse; font-family: Arial, sans-serif; font-size: 13px; color: #222222; max-width: 500px;\"><tr><td style=\"vertical-align: top; padding-top: 4px;\"><div style=\"font-weight: bold;\">Jordan Reyes</div><div style=\"font-style: italic;\">Operations Manager, Rivertown Food Tours</div><div style=\"font-style: italic;\">she/her</div><div style=\"height: 8px;\"></div><div>phone: (555) 010-1234 (call or text)</div><div><a href=\"https://rivertownfoodtours-demo.example\" style=\"color: #1155cc;\">rivertownfoodtours-demo.example</a></div><div style=\"height: 8px;\"></div><div>Psst: We also provide incredible <b><a href=\"https://rivertownfoodtours-demo.example/corporate-tours/\" style=\"color: #1155cc;\">Corporate Experiences</a>!</b> <i>Discover the best of Rivertown's food scene—without the hassle of planning—even if you're managing a busy team schedule.</i></div></td></tr></table></div>`;\n\nreturn {\n  json: {\n    subject: subject,\n    body: cleaned + signature\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        1392
+      ],
+      "id": "f4753471-f570-4dc8-b5e4-34b2db9a08de",
+      "name": "Append Signature"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Rivertown Food Tours - Demo Data ",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1983711271,
+          "mode": "list",
+          "cachedResultName": "Echoes of the Speakeasy",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit#gid=1983711271"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1216,
+        384
+      ],
+      "id": "6d459cb4-c73c-4ec1-b3cd-2158a2f42e59",
+      "name": "Read Speakeasy Tab",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_GOOGLE_SHEETS_CRED_ID",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction rowValues(rowJson) {\n  const { row_number, ...rest } = rowJson;\n  return Object.values(rest);\n}\n\n// Row 1 of the sheet became this read's own field key names, not a\n// data row - so it never shows up in items at all. Object.keys() on\n// any item recovers those original key names, which are exactly row\n// 1's original cell text. The content doesn't matter here (it's just\n// this tour's title), but a placeholder needs to sit at position 0 so\n// every real row after it lines up correctly.\nconst { row_number: _drop, ...firstItemKeys } = items[0].json;\nconst headerRowValues = Object.keys(firstItemKeys);\n\nconst dataRows = items.map(item => rowValues(item.json));\nconst allRows = [headerRowValues, ...dataRows];\n\nfunction findSection(rows, markerName) {\n  const startIdx = rows.findIndex(r => (r[0] || '').toString().trim().toUpperCase() === markerName);\n  if (startIdx === -1) return [];\n  const headerRow = rows[startIdx + 1] || [];\n  const result = [];\n  for (let i = startIdx + 2; i < rows.length; i++) {\n    const row = rows[i];\n    const isBlank = !row || row.every(c => !c || c.toString().trim() === '');\n    const isNextMarker = row && ['STOPS', 'MENU', 'SUBSTITUTIONS'].includes((row[0] || '').toString().trim().toUpperCase());\n    if (isBlank || isNextMarker) break;\n    const obj = {};\n    headerRow.forEach((h, idx) => { obj[(h || '').toString().trim()] = (row[idx] || '').toString().trim(); });\n    result.push(obj);\n  }\n  return result;\n}\n\nreturn { json: { stops: findSection(allRows, 'STOPS'), menu_items: findSection(allRows, 'MENU'), substitutions: findSection(allRows, 'SUBSTITUTIONS') } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        384
+      ],
+      "id": "fa2a2f25-4b06-4e2f-aaea-e9831f9b9154",
+      "name": "Parse Speakeasy Sections"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Rivertown Food Tours - Demo Data ",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1007330154,
+          "mode": "list",
+          "cachedResultName": "Secrets of the Arts Quarter",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit#gid=1007330154"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -592,
+        688
+      ],
+      "id": "c88af6ee-b057-459a-b5df-7253563570f6",
+      "name": "Read Secrets of the Arts Quarter",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_GOOGLE_SHEETS_CRED_ID",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction rowValues(rowJson) {\n  const { row_number, ...rest } = rowJson;\n  return Object.values(rest);\n}\n\n// Row 1 of the sheet became this read's own field key names, not a\n// data row - so it never shows up in items at all. Object.keys() on\n// any item recovers those original key names, which are exactly row\n// 1's original cell text. The content doesn't matter here (it's just\n// this tour's title), but a placeholder needs to sit at position 0 so\n// every real row after it lines up correctly.\nconst { row_number: _drop, ...firstItemKeys } = items[0].json;\nconst headerRowValues = Object.keys(firstItemKeys);\n\nconst dataRows = items.map(item => rowValues(item.json));\nconst allRows = [headerRowValues, ...dataRows];\n\nfunction findSection(rows, markerName) {\n  const startIdx = rows.findIndex(r => (r[0] || '').toString().trim().toUpperCase() === markerName);\n  if (startIdx === -1) return [];\n  const headerRow = rows[startIdx + 1] || [];\n  const result = [];\n  for (let i = startIdx + 2; i < rows.length; i++) {\n    const row = rows[i];\n    const isBlank = !row || row.every(c => !c || c.toString().trim() === '');\n    const isNextMarker = row && ['STOPS', 'MENU', 'SUBSTITUTIONS'].includes((row[0] || '').toString().trim().toUpperCase());\n    if (isBlank || isNextMarker) break;\n    const obj = {};\n    headerRow.forEach((h, idx) => { obj[(h || '').toString().trim()] = (row[idx] || '').toString().trim(); });\n    result.push(obj);\n  }\n  return result;\n}\n\nreturn { json: { stops: findSection(allRows, 'STOPS'), menu_items: findSection(allRows, 'MENU'), substitutions: findSection(allRows, 'SUBSTITUTIONS') } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        688
+      ],
+      "id": "bbca2263-3664-4d9e-99c2-c9b3f2073b5e",
+      "name": "Parse Secrets of the Arts Quarter Sections"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Rivertown Food Tours - Demo Data ",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1553048624,
+          "mode": "list",
+          "cachedResultName": "Rivertown Legends",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit#gid=1553048624"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        176,
+        688
+      ],
+      "id": "497eaca4-7e6b-4bca-8d74-bdbcd60e5dd8",
+      "name": "Read Rivertown Legends",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_GOOGLE_SHEETS_CRED_ID",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Rivertown Food Tours - Demo Data ",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 282477831,
+          "mode": "list",
+          "cachedResultName": "Old Elm District",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit#gid=282477831"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        944,
+        688
+      ],
+      "id": "2fae3535-8700-406a-8eaa-b9234696f14e",
+      "name": "Read Old Elm District",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_GOOGLE_SHEETS_CRED_ID",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction rowValues(rowJson) {\n  const { row_number, ...rest } = rowJson;\n  return Object.values(rest);\n}\n\n// Row 1 of the sheet became this read's own field key names, not a\n// data row - so it never shows up in items at all. Object.keys() on\n// any item recovers those original key names, which are exactly row\n// 1's original cell text. The content doesn't matter here (it's just\n// this tour's title), but a placeholder needs to sit at position 0 so\n// every real row after it lines up correctly.\nconst { row_number: _drop, ...firstItemKeys } = items[0].json;\nconst headerRowValues = Object.keys(firstItemKeys);\n\nconst dataRows = items.map(item => rowValues(item.json));\nconst allRows = [headerRowValues, ...dataRows];\n\nfunction findSection(rows, markerName) {\n  const startIdx = rows.findIndex(r => (r[0] || '').toString().trim().toUpperCase() === markerName);\n  if (startIdx === -1) return [];\n  const headerRow = rows[startIdx + 1] || [];\n  const result = [];\n  for (let i = startIdx + 2; i < rows.length; i++) {\n    const row = rows[i];\n    const isBlank = !row || row.every(c => !c || c.toString().trim() === '');\n    const isNextMarker = row && ['STOPS', 'MENU', 'SUBSTITUTIONS'].includes((row[0] || '').toString().trim().toUpperCase());\n    if (isBlank || isNextMarker) break;\n    const obj = {};\n    headerRow.forEach((h, idx) => { obj[(h || '').toString().trim()] = (row[idx] || '').toString().trim(); });\n    result.push(obj);\n  }\n  return result;\n}\n\nreturn { json: { stops: findSection(allRows, 'STOPS'), menu_items: findSection(allRows, 'MENU'), substitutions: findSection(allRows, 'SUBSTITUTIONS') } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1312,
+        688
+      ],
+      "id": "eb4c6a89-7b32-4dec-a055-b14913a62b3f",
+      "name": "Parse Old Elm District Sections"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction rowValues(rowJson) {\n  const { row_number, ...rest } = rowJson;\n  return Object.values(rest);\n}\n\n// Row 1 of the sheet became this read's own field key names, not a\n// data row - so it never shows up in items at all. Object.keys() on\n// any item recovers those original key names, which are exactly row\n// 1's original cell text. The content doesn't matter here (it's just\n// this tour's title), but a placeholder needs to sit at position 0 so\n// every real row after it lines up correctly.\nconst { row_number: _drop, ...firstItemKeys } = items[0].json;\nconst headerRowValues = Object.keys(firstItemKeys);\n\nconst dataRows = items.map(item => rowValues(item.json));\nconst allRows = [headerRowValues, ...dataRows];\n\nfunction findSection(rows, markerName) {\n  const startIdx = rows.findIndex(r => (r[0] || '').toString().trim().toUpperCase() === markerName);\n  if (startIdx === -1) return [];\n  const headerRow = rows[startIdx + 1] || [];\n  const result = [];\n  for (let i = startIdx + 2; i < rows.length; i++) {\n    const row = rows[i];\n    const isBlank = !row || row.every(c => !c || c.toString().trim() === '');\n    const isNextMarker = row && ['STOPS', 'MENU', 'SUBSTITUTIONS'].includes((row[0] || '').toString().trim().toUpperCase());\n    if (isBlank || isNextMarker) break;\n    const obj = {};\n    headerRow.forEach((h, idx) => { obj[(h || '').toString().trim()] = (row[idx] || '').toString().trim(); });\n    result.push(obj);\n  }\n  return result;\n}\n\nreturn { json: { stops: findSection(allRows, 'STOPS'), menu_items: findSection(allRows, 'MENU'), substitutions: findSection(allRows, 'SUBSTITUTIONS') } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        544,
+        688
+      ],
+      "id": "5cad20e4-9695-4047-8cad-62c613bbb067",
+      "name": "Parse Rivertown Legends Sections"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1360,
+        0
+      ],
+      "id": "81f71279-05b9-4178-897d-1dc976c7b152",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Rivertown Food Tours - Demo Data ",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 870173216,
+          "mode": "list",
+          "cachedResultName": "Heritage Trolley",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit#gid=870173216"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1808,
+        384
+      ],
+      "id": "354f79ae-b13d-41ae-8a50-7e83c470a1e1",
+      "name": "Read Heritage Trolley",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_GOOGLE_SHEETS_CRED_ID",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction rowValues(rowJson) {\n  const { row_number, ...rest } = rowJson;\n  return Object.values(rest);\n}\n\nconst { row_number: _drop, ...firstItemKeys } = items[0].json;\nconst headerRowValues = Object.keys(firstItemKeys);\n\nconst dataRows = items.map(item => rowValues(item.json));\nconst allRows = [headerRowValues, ...dataRows];\n\nfunction findSection(rows, markerName) {\n  const startIdx = rows.findIndex(r => (r[0] || '').toString().trim().toUpperCase() === markerName);\n  if (startIdx === -1) return [];\n  const headerRow = rows[startIdx + 1] || [];\n  const result = [];\n  for (let i = startIdx + 2; i < rows.length; i++) {\n    const row = rows[i];\n    const isBlank = !row || row.every(c => !c || c.toString().trim() === '');\n    const isNextMarker = row && ['STOPS', 'MENU', 'SUBSTITUTIONS'].includes((row[0] || '').toString().trim().toUpperCase());\n    if (isBlank || isNextMarker) break;\n    const obj = {};\n    headerRow.forEach((h, idx) => { obj[(h || '').toString().trim()] = (row[idx] || '').toString().trim(); });\n    result.push(obj);\n  }\n  return result;\n}\n\nreturn { json: { stops: findSection(allRows, 'STOPS'), menu_items: findSection(allRows, 'MENU'), substitutions: findSection(allRows, 'SUBSTITUTIONS') } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2064,
+        448
+      ],
+      "id": "df16c3b7-f525-4695-b253-c9ffb2499778",
+      "name": "Parse Heritage Trolley Sections"
+    },
+    {
+      "parameters": {
+        "jsCode": "const allCancelledDeps = $('All Cancelled?').all().map(i => i.json);\nconst sentRecords = $('Check Cancellation Sent?').all().map(i => i.json).filter(j => j && j.departure_key);\nconst sentKeys = new Set(sentRecords.map(r => r.departure_key));\n\nconst parsedTabs = $('Parse Cancelled Tour Sections').all().map(i => i.json);\nconst tabByTourName = {};\nfor (const t of parsedTabs) {\n  tabByTourName[(t.tour_name || '').trim().toLowerCase()] = t;\n}\n\nfunction getDayOfWeek(dateStr) {\n  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];\n  const d = new Date(dateStr + 'T12:00:00');\n  return days[d.getDay()];\n}\n\nfunction pickStop(stops, restaurantName, departureDay) {\n  const candidates = stops.filter(s => (s.restaurant_name || '').trim().toLowerCase() === restaurantName.trim().toLowerCase());\n  const dayMatch = candidates.find(s => (s.day_of_week || '').trim().toLowerCase() === departureDay.toLowerCase());\n  if (dayMatch) return dayMatch;\n  return candidates.find(s => !s.day_of_week || s.day_of_week.trim() === '' || s.day_of_week.trim().toLowerCase() === 'all');\n}\n\nconst output = [];\n\nfor (const dep of allCancelledDeps) {\n  const departureKey = `${dep.tour_name}|||${dep.date}|||${dep.time}`.replace(/[^a-zA-Z0-9|]/g, '_');\n  if (sentKeys.has(departureKey)) continue;\n\n  let names = [];\n  const tabData = tabByTourName[(dep.tour_name || '').trim().toLowerCase()];\n  if (tabData) {\n    const departureDay = getDayOfWeek(dep.date);\n    const seen = new Set();\n    for (const stop of tabData.stops) {\n      const key = (stop.restaurant_name || '').trim().toLowerCase();\n      if (seen.has(key)) continue;\n      const matchStop = pickStop(tabData.stops, stop.restaurant_name, departureDay);\n      if (matchStop) { seen.add(key); names.push(stop.restaurant_name); }\n    }\n  }\n\n  output.push({\n    json: {\n      ...dep,\n      departure_key: departureKey,\n      restaurant_names: names.length > 0\n        ? names.join(', ')\n        : 'UNAVAILABLE — restaurant list could not be determined for this run. Check FareHarbor manually and notify every restaurant scheduled for this tour.'\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        -288
+      ],
+      "id": "127fc3c5-873f-4d7b-9efb-8135ba4ebbc8",
+      "name": "Prepare Cancellation Data",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "tableId": "cancellation_notices",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "tour_name",
+              "fieldValue": "={{ $('Prepare Cancellation Data').item.json.tour_name }}"
+            },
+            {
+              "fieldId": "date",
+              "fieldValue": "={{ $('Prepare Cancellation Data').item.json.date }}"
+            },
+            {
+              "fieldId": "time",
+              "fieldValue": "={{ $('Prepare Cancellation Data').item.json.time }}"
+            },
+            {
+              "fieldId": "notified_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            },
+            {
+              "fieldId": "departure_key",
+              "fieldValue": "={{ $('Prepare Cancellation Data').item.json.departure_key }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3248,
+        -288
+      ],
+      "id": "9ba94f6d-01eb-4f63-8cd9-60edbb631da4",
+      "name": "Record Cancellation Sent",
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_WITH_YOUR_SUPABASE_CRED_ID",
+          "name": "Supabase - Rivertown Food Tours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "cancellation_notices",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "departure_key",
+              "condition": "eq",
+              "keyValue": "={{ ($json.tour_name + '|||' + $json.date + '|||' + $json.time).replace(/[^a-zA-Z0-9|]/g, '_') }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2224,
+        -288
+      ],
+      "id": "9274c34d-0a24-4751-bc4f-ef6839ddc275",
+      "name": "Check Cancellation Sent?",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_WITH_YOUR_SUPABASE_CRED_ID",
+          "name": "Supabase - Rivertown Food Tours"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Rivertown Food Tours - Demo Data ",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ ({\n  'cellar row: wine & food pairing tour': 'Cellar Row',\n  'shadow street: murder, crime, & ghost tour of rivertown': 'Shadow Street',\n  'echoes of the speakeasy: ghosts, cocktails, & bites tour': 'Echoes of the Speakeasy',\n  'secrets of the arts quarter: food & history tour': 'Secrets of the Arts Quarter',\n  'rivertown legends: downtown heritage food & history tour': 'Rivertown Legends',\n  'historic walking tour of old elm district: food, spirits, history & architecture': 'Old Elm District',\n  'the heritage trolley: distillery tour, tasting rooms & spirits experiences': 'Heritage Trolley'\n})[$json.tour_name.trim().toLowerCase()] }}"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1792,
+        -288
+      ],
+      "id": "bedae2e1-9cef-4d4c-a884-f60c04665887",
+      "name": "Read Cancelled Tour Tab",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_GOOGLE_SHEETS_CRED_ID",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction rowValues(rowJson) {\n  const { row_number, ...rest } = rowJson;\n  return Object.values(rest);\n}\n\nconst { row_number: _drop, ...firstItemKeys } = items[0].json;\nconst headerRowValues = Object.keys(firstItemKeys);\n\nconst dataRows = items.map(item => rowValues(item.json));\nconst allRows = [headerRowValues, ...dataRows];\n\nfunction findSection(rows, markerName) {\n  const startIdx = rows.findIndex(r => (r[0] || '').toString().trim().toUpperCase() === markerName);\n  if (startIdx === -1) return [];\n  const headerRow = rows[startIdx + 1] || [];\n  const result = [];\n  for (let i = startIdx + 2; i < rows.length; i++) {\n    const row = rows[i];\n    const isBlank = !row || row.every(c => !c || c.toString().trim() === '');\n    const isNextMarker = row && ['STOPS', 'MENU', 'SUBSTITUTIONS'].includes((row[0] || '').toString().trim().toUpperCase());\n    if (isBlank || isNextMarker) break;\n    const obj = {};\n    headerRow.forEach((h, idx) => { obj[(h || '').toString().trim()] = (row[idx] || '').toString().trim(); });\n    result.push(obj);\n  }\n  return result;\n}\n\nreturn {\n  json: {\n    tour_name: $('All Cancelled?').item.json.tour_name,\n    stops: findSection(allRows, 'STOPS'),\n    menu_items: findSection(allRows, 'MENU'),\n    substitutions: findSection(allRows, 'SUBSTITUTIONS')\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        -288
+      ],
+      "id": "01ef35ad-d03f-457b-8c19-9f046afb58a1",
+      "name": "Parse Cancelled Tour Sections"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Remove AI-added plain-text sign-off and append real RFT signature\nconst body = $json.output.body || '';\nconst subject = $json.output.subject || '';\n\nlet cleaned = body.replace(/<p>Rivertown Food Tours<\\/p>\\s*$/i, '').replace(/<p>Rivertown Food Tours<\\/p>/gi, '').trim();\n\nconst signature = `<div dir=\"ltr\" class=\"gmail_signature\"><table cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse: collapse; font-family: Arial, sans-serif; font-size: 13px; color: #222222; max-width: 500px;\"><tr><td style=\"vertical-align: top; padding-top: 4px;\"><div style=\"font-weight: bold;\">Jordan Reyes</div><div style=\"font-style: italic;\">Operations Manager, Rivertown Food Tours</div><div style=\"font-style: italic;\">she/her</div><div style=\"height: 8px;\"></div><div>phone: (555) 010-1234 (call or text)</div><div><a href=\"https://rivertownfoodtours-demo.example\" style=\"color: #1155cc;\">rivertownfoodtours-demo.example</a></div><div style=\"height: 8px;\"></div><div>Psst: We also provide incredible <b><a href=\"https://rivertownfoodtours-demo.example/corporate-tours/\" style=\"color: #1155cc;\">Corporate Experiences</a>!</b> <i>Discover the best of Rivertown's food scene—without the hassle of planning—even if you're managing a busy team schedule.</i></div></td></tr></table></div>`;\n\n// Nested under \"output\" to match what Create Cancellation Draft already reads —\n// no changes needed to that node\nreturn {\n  json: {\n    output: {\n      subject: subject,\n      body: cleaned + signature\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2864,
+        -288
+      ],
+      "id": "6d3e70f4-89ce-481c-9749-b48723b953ef",
+      "name": "Append Signature (Cancellation)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Read Raw Import Tab": {
+      "main": [
+        [
+          {
+            "node": "Parse FareHarbor CSV Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse FareHarbor CSV Rows": {
+      "main": [
+        [
+          {
+            "node": "Check If Booking Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Check Result": {
+      "main": [
+        [
+          {
+            "node": "Any Changes?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Booking Exists?": {
+      "main": [
+        [
+          {
+            "node": "Changed?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group By Departure": {
+      "main": [
+        [
+          {
+            "node": "All Cancelled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Departure Drafts": {
+      "main": [
+        [
+          {
+            "node": "Get Restaurant Drafts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Cellar Row Tab": {
+      "main": [
+        [
+          {
+            "node": "Parse Cellar Row Sections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Cellar Row Sections": {
+      "main": [
+        [
+          {
+            "node": "Read Shadow Street Tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Shadow Street Tab": {
+      "main": [
+        [
+          {
+            "node": "Parse Shadow Street Sections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Shadow Street Sections": {
+      "main": [
+        [
+          {
+            "node": "Read Speakeasy Tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Departure To Stops": {
+      "main": [
+        [
+          {
+            "node": "Has Menu?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Menu?": {
+      "main": [
+        [
+          {
+            "node": "Extract Dietary Flags",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Empty Order Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model (Flags)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract Dietary Flags",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser (Flags)": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Extract Dietary Flags",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Dietary Flags": {
+      "main": [
+        [
+          {
+            "node": "Compute Order Lines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Order Lines": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Empty Order Data": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Email",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Generate Email",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Email": {
+      "main": [
+        [
+          {
+            "node": "Restaurant Draft Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Gmail Draft": {
+      "main": [
+        []
+      ]
+    },
+    "Check If Booking Exists": {
+      "main": [
+        [
+          {
+            "node": "Merge Check Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Structured Output Parser (Flags)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Group By Restaurant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Changed?": {
+      "main": [
+        [
+          {
+            "node": "Update Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Booking": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Update Booking": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Changes?": {
+      "main": [
+        [
+          {
+            "node": "Send No Changes Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Booking Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Cancellation Email",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Generate Cancellation Email",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Cancellation Email": {
+      "main": [
+        [
+          {
+            "node": "Append Signature (Cancellation)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "All Cancelled?": {
+      "main": [
+        [
+          {
+            "node": "Read Cancelled Tour Tab",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Departure Drafts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Restaurant Drafts": {
+      "main": [
+        [
+          {
+            "node": "Read Cellar Row Tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group By Restaurant": {
+      "main": [
+        [
+          {
+            "node": "Generate Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restaurant Draft Exists?": {
+      "main": [
+        [
+          {
+            "node": "Update Restaurant Draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Restaurant Draft": {
+      "main": [
+        [
+          {
+            "node": "Append Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a row": {
+      "main": [
+        [
+          {
+            "node": "Append Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Raw Import Tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Signature": {
+      "main": [
+        [
+          {
+            "node": "Create Gmail Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Speakeasy Tab": {
+      "main": [
+        [
+          {
+            "node": "Parse Speakeasy Sections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Speakeasy Sections": {
+      "main": [
+        [
+          {
+            "node": "Read Heritage Trolley",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Secrets of the Arts Quarter": {
+      "main": [
+        [
+          {
+            "node": "Parse Secrets of the Arts Quarter Sections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Secrets of the Arts Quarter Sections": {
+      "main": [
+        [
+          {
+            "node": "Read Rivertown Legends",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Rivertown Legends": {
+      "main": [
+        [
+          {
+            "node": "Parse Rivertown Legends Sections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Old Elm District": {
+      "main": [
+        [
+          {
+            "node": "Parse Old Elm District Sections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Old Elm District Sections": {
+      "main": [
+        [
+          {
+            "node": "Expand Departure To Stops",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Rivertown Legends Sections": {
+      "main": [
+        [
+          {
+            "node": "Read Old Elm District",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Group By Departure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Heritage Trolley": {
+      "main": [
+        [
+          {
+            "node": "Parse Heritage Trolley Sections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Heritage Trolley Sections": {
+      "main": [
+        [
+          {
+            "node": "Read Secrets of the Arts Quarter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Cancellation Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Cancellation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Cancellation Sent": {
+      "main": [
+        []
+      ]
+    },
+    "Check Cancellation Sent?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Cancellation Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Cancellation Draft": {
+      "main": [
+        [
+          {
+            "node": "Record Cancellation Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Cancelled Tour Tab": {
+      "main": [
+        [
+          {
+            "node": "Parse Cancelled Tour Sections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Cancelled Tour Sections": {
+      "main": [
+        [
+          {
+            "node": "Check Cancellation Sent?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Signature (Cancellation)": {
+      "main": [
+        [
+          {
+            "node": "Create Cancellation Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "America/New_York"
+  },
+  "versionId": "ac13fdec-4e0e-4d1f-a592-03772836ffed",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "eff262def81228b049aa471ebced5d6d3128aadf48a6d4fc89e0b090fc88c1c7"
+  },
+  "nodeGroups": [],
+  "id": "Cm3oamRyMh8Oiz34",
+  "tags": []
+}
